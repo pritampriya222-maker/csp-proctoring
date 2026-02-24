@@ -215,6 +215,14 @@ export default function LiveExamClient({
     import('peerjs').then(({ default: Peer }) => {
       const peer = new Peer(pairingId)
       peerInstance = peer
+      peer.on('open', () => {
+        console.log('LiveExam Peer open with ID:', pairingId)
+      })
+
+      // Accept data connections so the mobile client's `dataConn.on('open')` triggers
+      peer.on('connection', (conn: any) => {
+        conn.on('data', () => {}) // just acknowledge
+      })
 
       peer.on('call', (call: any) => {
         call.answer()

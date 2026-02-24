@@ -105,6 +105,18 @@ export default function ExamSetupClient({ examId, examTitle }: { examId: string,
     setPairingId(id)
   }, [])
 
+  // Ref to hold streams for cleanup on unmount without triggering effect re-runs
+  const streamsRef = useRef<{
+    stream: MediaStream | null,
+    screenStream: MediaStream | null,
+    mobileStream: MediaStream | null
+  }>({ stream: null, screenStream: null, mobileStream: null })
+
+  // Keep refs up to date
+  useEffect(() => {
+    streamsRef.current = { stream, screenStream, mobileStream }
+  }, [stream, screenStream, mobileStream])
+
   useEffect(() => {
     if (!pairingId) return
     
@@ -117,6 +129,11 @@ export default function ExamSetupClient({ examId, examTitle }: { examId: string,
 
       peer.on('open', () => {
         console.log('Desktop Peer open with ID:', pairingId)
+      })
+
+      // Accept data connections so the mobile client's `dataConn.on('open')` triggers
+      peer.on('connection', (conn: any) => {
+        conn.on('data', () => {}) // just acknowledge
       })
 
       // When the mobile phone makes the WebRTC call to us
@@ -144,24 +161,28 @@ export default function ExamSetupClient({ examId, examTitle }: { examId: string,
           }))
         })
       })
+      
+      peer.on('error', (err: any) => {
+        console.error('PeerJS error in Setup:', err)
+      })
     })
 
     return () => {
-      // Cleanup streams when unmounting this component (moving to the live exam)
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop())
-      }
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop())
-      }
-      if (mobileStream) {
-        mobileStream.getTracks().forEach(track => track.stop())
-      }
       if (peerInstance) {
         peerInstance.destroy()
       }
     }
-  }, [pairingId, stream, screenStream, mobileStream])
+  }, [pairingId])
+
+  // Component Unmount Cleanup
+  useEffect(() => {
+    return () => {
+      const current = streamsRef.current
+      if (current.stream) current.stream.getTracks().forEach(t => t.stop())
+      if (current.screenStream) current.screenStream.getTracks().forEach(t => t.stop())
+      if (current.mobileStream) current.mobileStream.getTracks().forEach(t => t.stop())
+    }
+  }, [])
 
   const allChecksPassed = 
     checks.camera.status === 'success' && 
