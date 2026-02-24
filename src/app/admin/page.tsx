@@ -5,10 +5,10 @@ import { PlusCircle, Clock, Users, Video, ShieldAlert, ArrowRight, BookOpen } fr
 export default async function AdminDashboard() {
   const supabase = await createClient()
 
-  // 1. Fetch upcoming exams
+  // 1. Fetch upcoming and active exams
   const { data: exams } = await supabase
     .from('exams')
-    .select('id, title, start_time, duration_minutes')
+    .select('id, title, start_time, end_time, duration_minutes')
     .order('start_time', { ascending: true })
 
   // 2. Fetch Metrics
@@ -49,7 +49,7 @@ export default async function AdminDashboard() {
         />
         <MetricCard 
           title="Active Exams" 
-          value={exams?.filter(e => new Date(e.start_time) <= new Date() && new Date(new Date(e.start_time).getTime() + e.duration_minutes * 60000) >= new Date()).length || 0} 
+          value={exams?.filter(e => new Date(e.start_time) <= new Date() && new Date(e.end_time) >= new Date()).length || 0} 
           icon={<Clock className="text-success" />} 
           trend="Live Now"
         />

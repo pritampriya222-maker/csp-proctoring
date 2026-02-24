@@ -9,11 +9,11 @@ export default async function StudentDashboard() {
 
   if (!user) return null
 
-  // 1. Fetch upcoming exams
+  // 1. Fetch upcoming and active exams
   const { data: exams } = await supabase
     .from('exams')
     .select('*')
-    .gt('start_time', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .gt('end_time', new Date().toISOString())
     .order('start_time', { ascending: true })
 
   // 2. Fetch user's exam sessions
