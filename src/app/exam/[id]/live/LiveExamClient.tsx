@@ -3,13 +3,27 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Clock, Video, Mic, Monitor, Smartphone, CheckCircle } from 'lucide-react'
-import { LiveKitRoom, useTracks, VideoTrack } from '@livekit/components-react'
+import { LiveKitRoom, useTracks, VideoTrack, useLocalParticipant } from '@livekit/components-react'
 import { RoomEvent, Track } from 'livekit-client'
 import { createClient } from '@/utils/supabase/client'
 import { submitExam, recordViolation } from './actions'
 import ProctoringEngine from './ProctoringEngine'
 
-// Define the exam interface
+// Inner component to explicitly enable screensharing once connected
+function AutoScreenPublisher() {
+  const { localParticipant } = useLocalParticipant()
+
+  useEffect(() => {
+    if (localParticipant && !localParticipant.isScreenShareEnabled) {
+      localParticipant.setScreenShareEnabled(true, { audio: false }).catch(err => {
+        console.error('Failed to auto-publish screen share to LiveKit:', err)
+      })
+    }
+  }, [localParticipant])
+
+  return null
+}
+
 export default function LiveExamClient({
   exam,
   questions,
@@ -447,11 +461,9 @@ function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
       connect={true}
-      style={{ display: 'none' }} // Hidden from student view
-      onConnected={() => console.log('Connected to LiveKit as Broadcaster')}
       onDisconnected={() => console.log('Disconnected from LiveKit')}
     >
-      {/* Empty internal, it automatically publishes due to screen=true */}
+      <AutoScreenPublisher />
     </LiveKitRoom>
   )
 }

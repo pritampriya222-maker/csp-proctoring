@@ -60,7 +60,11 @@ export default function AdminScreenMonitor({ sessionId, studentName }: { session
 // Inner component that extracts and renders the remote screen track
 function ScreenView() {
   // Find any published ScreenShare tracks in this room
-  const tracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: false })
+  // Setting updateOnlyOn to an empty array makes it re-evaluate whenever ANY track changes
+  const tracks = useTracks(
+    [{ source: Track.Source.ScreenShare, withPlaceholder: false }], 
+    { onlySubscribed: false }
+  )
   
   if (tracks.length === 0) {
     return (
@@ -73,10 +77,12 @@ function ScreenView() {
   }
 
   // Render the first screen track found
+  const trackRef = tracks[0] as any
+
   return (
     <div className="w-full h-full">
       <VideoTrack 
-        trackRef={tracks[0]} 
+        trackRef={trackRef} 
         className="w-full h-full object-contain bg-black" 
       />
     </div>
