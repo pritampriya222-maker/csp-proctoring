@@ -13,15 +13,23 @@ import ProctoringEngine from './ProctoringEngine'
 function AutoStreamPublisher({ cameraStream }: { cameraStream?: MediaStream | null }) {
   const { localParticipant } = useLocalParticipant()
   const connectionState = useConnectionState()
+  const isPublishedRef = useRef(false)
 
   useEffect(() => {
     if (connectionState !== ConnectionState.Connected || !localParticipant) return
 
     // 1. Manually publish the shared camera stream if provided
-    if (cameraStream) {
+    if (cameraStream && !isPublishedRef.current) {
       const videoTrack = cameraStream.getVideoTracks()[0]
       if (videoTrack) {
-        localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera }).catch(err => {
+        console.log("LiveKit: Publishing shared camera track...")
+        localParticipant.publishTrack(videoTrack, { 
+          source: Track.Source.Camera,
+          name: 'student-camera'
+        }).then(() => {
+          isPublishedRef.current = true
+          console.log("LiveKit: Shared camera published.")
+        }).catch(err => {
           console.error('Failed to publish shared video track:', err)
         })
       }
@@ -72,7 +80,7 @@ export default function LiveExamClient({
     } catch (e) {}
   }, [sessionId])
   
-  // Proctoring Statuses
+  const [aiStatus, setAiStatus] = useState('Initializing...')
   const [phoneStatus, setPhoneStatus] = useState<'pending' | 'success' | 'error'>('pending')
   const [mobileStream, setMobileStream] = useState<MediaStream | null>(null)
   const [sharedStream, setSharedStream] = useState<MediaStream | null>(null)
@@ -89,16 +97,30 @@ export default function LiveExamClient({
     // Update system statuses based on warnings
     if (msg.toLowerCase().includes('face') || msg.toLowerCase().includes('camera')) {
        setSysStatus(s => ({ ...s, camera: 'error' }))
-    } else if (msg.toLowerCase().includes('speak') || msg.toLowerCase().includes('mic')) {
+    }
+    if (msg.toLowerCase().includes('mic') || msg.toLowerCase().includes('speaking')) {
        setSysStatus(s => ({ ...s, mic: 'error' }))
-    } else if (msg.toLowerCase().includes('screen') || msg.toLowerCase().includes('tab') || msg.toLowerCase().includes('fullscreen')) {
+    }
+    if (msg.toLowerCase().includes('screen')) {
        setSysStatus(s => ({ ...s, screen: 'error' }))
     }
 
     // Auto-clear toast
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
-      setSysStatus({ camera: 'success', mic: 'success', screen: 'success' })
+      // Reset only if no more toasts of this type exist
+      setToasts(current => {
+         const hasFace = current.some(t => t.msg.toLowerCase().includes('face') || t.msg.toLowerCase().includes('camera'))
+         const hasMic = current.some(t => t.msg.toLowerCase().includes('mic') || t.msg.toLowerCase().includes('speaking'))
+         const hasScreen = current.some(t => t.msg.toLowerCase().includes('screen'))
+         
+         setSysStatus({
+            camera: hasFace ? 'error' : 'success',
+            mic: hasMic ? 'error' : 'success',
+            screen: hasScreen ? 'error' : 'success'
+         })
+         return current
+      })
     }, 6000)
   }, [])
 
@@ -228,6 +250,7 @@ export default function LiveExamClient({
   }, [sessionId, addToast, autoSubmit])
 
   const handleProctoringWarning = useCallback((msg: string) => {
+    console.log(`[AI WARNING] ${msg}`)
     addToast(msg, msg.includes('Multiple') ? 'critical' : 'warning')
     
     let type = 'ai_warning'
@@ -252,12 +275,15 @@ export default function LiveExamClient({
       import('peerjs').then(({ default: Peer }) => {
         const peer = new Peer(pairingId)
         peerInstance = peer
+        // Listen for mobile camera stream
         peer.on('call', (call: any) => {
+          console.log('PeerJS: Incoming call from mobile device...')
           call.answer()
           call.on('stream', (remoteStream: MediaStream) => {
+            console.log('PeerJS: Mobile stream received successfully.')
             setMobileStream(remoteStream)
             setPhoneStatus('success')
-            addToast('Secondary camera feed established.', 'info')
+            addToast('Mobile camera linked successfully.', 'info')
           })
           call.on('close', () => {
             setMobileStream(null)
@@ -265,8 +291,9 @@ export default function LiveExamClient({
             handleProctoringWarning('Mobile Phone Disconnected. Return phone to exam mode.')
           })
         })
-        
+
         peer.on('connection', (conn: any) => {
+           console.log('PeerJS: Data connection established with mobile.')
            conn.on('open', () => {
               conn.send({ sessionId })
            })
@@ -317,6 +344,11 @@ export default function LiveExamClient({
   return (
     <div className="min-h-screen bg-[#0B0F14] text-foreground flex flex-col select-none overflow-hidden font-sans">
       
+      {/* Hidden Debug Trigger (Top Left) */}
+      <div className="fixed top-0 left-0 w-8 h-8 z-[9999] opacity-0 hover:opacity-5 flex items-center justify-center cursor-help bg-white rounded-br-lg" 
+           onClick={() => handleProctoringWarning("Debug: Manual Integrity Check Triggered")}>
+      </div>
+
       {/* Dynamic Navbar */}
       <header className="h-18 px-8 border-b border-border bg-card/50 backdrop-blur-xl flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-6">
@@ -538,10 +570,13 @@ export default function LiveExamClient({
 
            {/* Alert Log (Mini) */}
            <div className="flex-1 bg-black/20 rounded-2xl border border-border p-4 overflow-hidden flex flex-col">
-              <div className="flex justify-between items-center mb-4">
-                 <span className="text-[10px] font-black text-secondary-foreground uppercase tracking-widest opacity-40">Security log</span>
-                 <Info size={12} className="text-primary opacity-40" />
+              <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-black text-secondary-foreground uppercase tracking-widest opacity-40">Security Log</span>
+              <div className="flex items-center gap-2">
+                 <div className={`w-1 h-1 rounded-full ${aiStatus.includes('Active') ? 'bg-success' : 'bg-warning'} animate-pulse`} />
+                 <span className="text-[8px] font-black text-foreground/50 uppercase tracking-widest">{aiStatus}</span>
               </div>
+            </div>
               <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                  {toasts.slice().reverse().map((t) => (
                     <div key={t.id} className="flex gap-3 text-[10px] animate-in fade-in slide-in-from-bottom-2">
@@ -585,6 +620,7 @@ export default function LiveExamClient({
               sessionId={sessionId} 
               onWarning={handleProctoringWarning} 
               onStreamAcquired={setSharedStream}
+              onAiStatus={setAiStatus}
            />
            <LiveKitBroadcaster 
               sessionId={sessionId} 
@@ -658,9 +694,9 @@ function LiveKitBroadcaster({ sessionId, cameraStream }: { sessionId: string, ca
 
   return (
     <LiveKitRoom
-      video={false} // We publish manually via AutoStreamPublisher to avoid hardware conflicts
+      video={false} 
       audio={false}
-      screen={true}
+      screen={false} // Handle screenshare manually in AutoStreamPublisher
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
       connect={true}

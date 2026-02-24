@@ -8,15 +8,25 @@ import { Track, ConnectionState } from 'livekit-client'
 function MobileAutoPublisher({ stream }: { stream: MediaStream | null }) {
   const { localParticipant } = useLocalParticipant()
   const connectionState = useConnectionState()
+  const isPublishedRef = useRef(false)
 
   useEffect(() => {
     if (connectionState !== ConnectionState.Connected || !localParticipant || !stream) return
 
-    const videoTrack = stream.getVideoTracks()[0]
-    if (videoTrack) {
-      localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera }).catch(err => {
-        console.error('Failed to publish mobile video track:', err)
-      })
+    if (!isPublishedRef.current) {
+      const videoTrack = stream.getVideoTracks()[0]
+      if (videoTrack) {
+        console.log("Mobile: Publishing lateral video track...")
+        localParticipant.publishTrack(videoTrack, { 
+          source: Track.Source.Camera,
+          name: 'mobile-camera' 
+        }).then(() => {
+          isPublishedRef.current = true
+          console.log("Mobile: Lateral video track published.")
+        }).catch(err => {
+          console.error('Mobile: Failed to publish video track:', err)
+        })
+      }
     }
   }, [localParticipant, connectionState, stream])
 

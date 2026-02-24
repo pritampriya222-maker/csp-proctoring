@@ -12,11 +12,13 @@ export interface ProctoringEvent {
 export default function ProctoringEngine({
   sessionId,
   onWarning,
-  onStreamAcquired
+  onStreamAcquired,
+  onAiStatus
 }: {
   sessionId: string
   onWarning: (msg: string) => void
   onStreamAcquired?: (stream: MediaStream) => void
+  onAiStatus?: (status: string) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const screenRef = useRef<HTMLVideoElement>(null)
@@ -39,6 +41,7 @@ export default function ProctoringEngine({
       isCaptureStarting.current = true
 
       try {
+        console.log("ProctoringEngine: Requesting camera...")
         const cStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, facingMode: 'user' },
           audio: true
@@ -52,8 +55,10 @@ export default function ProctoringEngine({
         cameraStreamRef.current = cStream
         if (videoRef.current) {
           videoRef.current.srcObject = cStream
+          videoRef.current.play().catch(e => console.warn("Video auto-play failed", e))
         }
         
+        console.log("ProctoringEngine: Camera stream acquired.")
         onStreamAcquired?.(cStream)
 
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
@@ -87,6 +92,7 @@ export default function ProctoringEngine({
 
         audioLoopId = window.setInterval(analyzeAudio, 100)
 
+        console.log("ProctoringEngine: Requesting screen share...")
         const sStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'monitor' }
         })
@@ -115,9 +121,81 @@ export default function ProctoringEngine({
     startCapturing()
 
     let faceLandmarker: FaceLandmarker | null = null
-    
+    let lastWarningTime = 0
+    let lastVideoTime = -1
+    let lastDetectTime = 0
+
+    const processVideo = async () => {
+      if (isShuttingDown.current) return
+
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        // Force play just in case autoPlay was blocked
+        if (videoRef.current.paused) {
+          videoRef.current.play().catch(e => console.error("Video play failed:", e))
+        }
+
+        const canvas = document.getElementById('proctoring-canvas') as HTMLCanvasElement
+        if (canvas) {
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            if (canvas.width !== videoRef.current.videoWidth) {
+              console.log("ProctoringEngine: Setting canvas size", videoRef.current.videoWidth, videoRef.current.videoHeight)
+              canvas.width = videoRef.current.videoWidth
+              canvas.height = videoRef.current.videoHeight
+            }
+            ctx.save()
+            ctx.scale(-1, 1)
+            ctx.drawImage(videoRef.current, -canvas.width, 0, canvas.width, canvas.height)
+            ctx.restore()
+            
+            const placeholder = document.getElementById('self-view-placeholder')
+            if (placeholder) placeholder.style.display = 'none'
+          }
+        }
+
+        if (faceLandmarker) {
+          try {
+            const currentTime = videoRef.current.currentTime
+            if (currentTime !== lastVideoTime) {
+              lastVideoTime = currentTime
+              const now = Date.now()
+              if (now - lastDetectTime > 500) { 
+                lastDetectTime = now
+                if (isShuttingDown.current) return
+                
+                // Use video timestamp for better sync with detection
+                const timestampMs = performance.now() 
+                const results = faceLandmarker.detectForVideo(videoRef.current, timestampMs)
+                
+                if (now - lastWarningTime > 3000) { 
+                  if (results.faceBlendshapes.length === 0) {
+                     onWarning("Face not detected! Please look at the camera.")
+                     lastWarningTime = now
+                  } else if (results.faceBlendshapes.length > 1) {
+                     onWarning("Multiple faces detected! You must be alone in the room.")
+                     lastWarningTime = now
+                  } else {
+                     // Face detected - no action needed
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("Detection failed", err)
+          }
+        }
+      }
+      
+      if (!isShuttingDown.current) {
+        visionLoopId = window.requestAnimationFrame(processVideo)
+      }
+    }
+
     const initVision = async () => {
       try {
+        console.log("ProctoringEngine: Initializing AI engine...")
+        onAiStatus?.("Loading AI Models...")
+        
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
         )
@@ -126,86 +204,22 @@ export default function ProctoringEngine({
         faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "GPU"
           },
           outputFaceBlendshapes: true,
           runningMode: "VIDEO",
           numFaces: 2
         })
-
-        let lastWarningTime = 0
-        let lastVideoTime = -1
-        let lastDetectTime = 0
-
-        const processVideo = async () => {
-           if (isShuttingDown.current) return
-
-           if (videoRef.current && videoRef.current.readyState >= 2) {
-             // Mirror the feed to the HUD canvas
-             const canvas = document.getElementById('proctoring-canvas') as HTMLCanvasElement
-             if (canvas) {
-               const ctx = canvas.getContext('2d')
-               if (ctx) {
-                 // Set canvas size to match video aspect ratio if not set
-                 if (canvas.width !== videoRef.current.videoWidth) {
-                   canvas.width = videoRef.current.videoWidth
-                   canvas.height = videoRef.current.videoHeight
-                 }
-                 ctx.save()
-                 ctx.scale(-1, 1)
-                 ctx.drawImage(videoRef.current, -canvas.width, 0, canvas.width, canvas.height)
-                 ctx.restore()
-                 
-                 // Remove the placeholder if it exists (via parent hiding)
-                 const placeholder = document.getElementById('self-view-placeholder')
-                 if (placeholder) placeholder.style.display = 'none'
-               }
-             }
-
-             if (faceLandmarker) {
-               try {
-                 const currentTime = videoRef.current.currentTime
-                 if (currentTime !== lastVideoTime) {
-                   lastVideoTime = currentTime
-                   const now = Date.now()
-                   if (now - lastDetectTime > 500) { 
-                     lastDetectTime = now
-                     if (isShuttingDown.current) return
-                     const startTimeMs = performance.now()
-                     try {
-                      const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs)
-                      if (now - lastWarningTime > 3000) { 
-                        if (results.faceBlendshapes.length === 0) {
-                           console.log("AI Event: Face missing")
-                           onWarning("Face not detected! Please look at the camera.")
-                           lastWarningTime = now
-                        } else if (results.faceBlendshapes.length > 1) {
-                           console.log("AI Event: Multiple faces")
-                           onWarning("Multiple faces detected! You must be alone in the room.")
-                           lastWarningTime = now
-                        }
-                      }
-                     } catch (e) {
-                       console.warn("WASM execution error", e)
-                     }
-                   }
-                 }
-               } catch (err) {
-                 console.warn("Vision frame skipped", err)
-               }
-             }
-           }
-           if (!isShuttingDown.current) {
-             visionLoopId = window.requestAnimationFrame(processVideo)
-           }
-        }
-        processVideo()
+        
+        console.log("ProctoringEngine: AI engine ready.")
+        onAiStatus?.("AI Monitoring Active")
       } catch (e) {
         console.error("Vision AI failed to load", e)
+        onAiStatus?.("AI Initialization Failed")
       }
     }
     
     initVision()
+    processVideo() // Start rendering immediately
 
     return () => {
       isShuttingDown.current = true
