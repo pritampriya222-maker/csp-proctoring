@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Clock, Calendar, CheckCircle, AlertCircle, PlayCircle, Loader2, ArrowRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { initializeStudentSession } from './studentActions'
 
 export default function ExamList({ exams }: { exams: any[] }) {
   const [now, setNow] = useState<Date | null>(null)
@@ -77,12 +79,14 @@ export default function ExamList({ exams }: { exams: any[] }) {
                }
             } else {
                // NOT_ATTEMPTED
-               if (isFuture) {
+               if (!exam.is_published) {
+                 actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest opacity-40">Internal Only</button>
+               } else if (isFuture) {
                  actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Not Started</button>
                } else if (isPast) {
                  actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Closed</button>
                } else {
-                 actionBtn = <Link href={`/exam/${exam.id}/setup`} className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-full text-xs font-bold uppercase tracking-widest transition-all duration-300 shadow-lg shadow-primary/20 hover:scale-[1.02]">Start Exam <ArrowRight size={14} /></Link>
+                 actionBtn = <StartExamButton examId={exam.id} />
                }
             }
 
@@ -121,5 +125,37 @@ export default function ExamList({ exams }: { exams: any[] }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+function StartExamButton({ examId }: { examId: string }) {
+  const router = useRouter()
+  const [isStarting, setIsStarting] = useState(false)
+
+  const handleStart = async () => {
+    setIsStarting(true)
+    try {
+      const { sessionId } = await initializeStudentSession(examId)
+      router.push(`/exam/${examId}/setup`)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to initialize session. Please contact support.')
+    } finally {
+      setIsStarting(false)
+    }
+  }
+
+  return (
+    <button 
+      onClick={handleStart}
+      disabled={isStarting}
+      className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-full text-xs font-bold uppercase tracking-widest transition-all duration-300 shadow-lg shadow-primary/20 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {isStarting ? (
+        <Loader2 className="animate-spin" size={14} />
+      ) : (
+        <>Start Exam <ArrowRight size={14} /></>
+      )}
+    </button>
   )
 }

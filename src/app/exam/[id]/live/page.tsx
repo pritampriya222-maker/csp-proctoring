@@ -59,19 +59,32 @@ export default async function LiveExamPage({
       )
   }
 
-  // Fetch questions
-  const { data: questions } = await supabase
-    .from('exam_questions')
-    .select('id, type, question_text, options')
-    .eq('exam_id', exam.id)
-    .order('created_at', { ascending: true })
+  // Fetch assigned questions for this session
+  const { data: sessionQs, error: qError } = await supabase
+    .from('session_questions')
+    .select(`
+      order,
+      exam_questions (
+        id,
+        type,
+        question_text,
+        options,
+        difficulty
+      )
+    `)
+    .eq('session_id', session.id)
+    .order('order', { ascending: true })
 
-  // Ensure questions don't include the correct_answer field explicitly (security)
-  const safeQuestions = questions?.map(q => ({
-    ...q,
-    // Just ensuring we don't accidentally leak correct_answer to client if it happened to be returned above
-    correct_answer: undefined 
-  })) || []
+  if (qError || !sessionQs) {
+    console.error("Failed to fetch session questions", qError)
+    return <div className="p-8 text-red-500">Failed to load examination protocols.</div>
+  }
+
+  // Flatten the join result
+  const safeQuestions = sessionQs.map((sq: any) => ({
+    ...sq.exam_questions,
+    order: sq.order
+  }))
 
   return (
     <LiveExamClient 

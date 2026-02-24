@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Clock, Calendar, Edit, Play, FileText, Layout, Activity, ShieldAlert, ChevronRight, User } from 'lucide-react'
+import ExamConfigPanel from './ExamConfigPanel'
 
 export default async function ExamDetailsPage({
   params,
@@ -62,7 +63,11 @@ export default async function ExamDetailsPage({
            </Link>
            <Link 
              href={`/admin/exams/${exam.id}/monitor`} 
-             className="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 active:scale-95"
+             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 ${
+               exam.is_published 
+                ? 'bg-primary text-white hover:bg-primary/90 shadow-primary/20' 
+                : 'bg-muted border border-border text-secondary-foreground opacity-50 cursor-not-allowed'
+             }`}
            >
              <Play size={16} />
              Live Monitor
@@ -83,12 +88,20 @@ export default async function ExamDetailsPage({
                  </div>
                  <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
-                       <Calendar size={14} className="text-primary opacity-50" />
-                       <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{new Date(exam.start_time).toLocaleDateString()}</span>
+                       {exam.is_published ? (
+                         <div className="flex items-center gap-1.5 bg-success/10 border border-success/20 px-2 py-0.5 rounded-full">
+                            <div className="w-1 h-1 rounded-full bg-success animate-pulse" />
+                            <span className="text-[8px] font-black text-success uppercase tracking-widest">Active Session</span>
+                         </div>
+                       ) : (
+                         <div className="flex items-center gap-1.5 bg-muted border border-border px-2 py-0.5 rounded-full">
+                            <span className="text-[8px] font-black text-secondary-foreground opacity-50 uppercase tracking-widest">Draft / Internal</span>
+                         </div>
+                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                       <Clock size={14} className="text-primary opacity-50" />
-                       <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{exam.duration_minutes} Mins</span>
+                       <Calendar size={14} className="text-primary opacity-50" />
+                       <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{new Date(exam.start_time).toLocaleDateString()}</span>
                     </div>
                  </div>
               </div>
@@ -103,7 +116,7 @@ export default async function ExamDetailsPage({
               <div className="px-8 py-6 border-b border-border flex justify-between items-center bg-muted/10">
                  <div className="flex items-center gap-3">
                     <Activity size={18} className="text-primary opacity-50" />
-                    <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Encoded Questions</h3>
+                    <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Question Pool</h3>
                  </div>
                  <Link 
                    href={`/admin/exams/${exam.id}/questions/upload`}
@@ -122,7 +135,16 @@ export default async function ExamDetailsPage({
                              {String(idx + 1).padStart(2, '0')}
                           </div>
                           <div className="flex-1 space-y-4">
-                            <p className="font-black text-foreground leading-tight tracking-tight uppercase text-sm">{q.question_text}</p>
+                            <div className="flex items-center justify-between">
+                               <p className="font-black text-foreground leading-tight tracking-tight uppercase text-sm">{q.question_text}</p>
+                               <span className={`text-[8px] font-black px-2 py-1 rounded-lg border uppercase tracking-widest ${
+                                 q.difficulty === 'easy' ? 'bg-success/5 border-success/20 text-success' :
+                                 q.difficulty === 'medium' ? 'bg-warning/5 border-warning/20 text-warning' :
+                                 'bg-destructive/5 border-destructive/20 text-destructive'
+                               }`}>
+                                 {q.difficulty}
+                               </span>
+                            </div>
                             {q.type === 'mcq' && q.options && (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options).map((opt: string, i: number) => (
@@ -151,29 +173,35 @@ export default async function ExamDetailsPage({
            </div>
         </div>
 
-        {/* Right Column: Analytics */}
-        <div className="space-y-6">
-           <div className="bg-card border border-border rounded-3xl p-8 relative overflow-hidden shadow-2xl group">
-              <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/20 transition-all duration-700" />
-              <p className="text-[10px] font-black text-secondary-foreground uppercase tracking-[0.2em] mb-4 opacity-50">Total Payload</p>
-              <div className="flex items-end gap-3">
-                 <h3 className="text-6xl font-black text-foreground tracking-tighter">{questions?.length || 0}</h3>
-                 <span className="text-[10px] font-black text-primary uppercase tracking-widest mb-3">Units</span>
-              </div>
-           </div>
+        {/* Right Column: Configuration & Status */}
+        <div className="space-y-8">
+           <ExamConfigPanel 
+             examId={exam.id}
+             initialConfig={{
+               easy: exam.easy_count || 0,
+               medium: exam.medium_count || 0,
+               hard: exam.hard_count || 0
+             }}
+             isPublished={exam.is_published || false}
+             totalQuestions={{
+               easy: questions?.filter(q => q.difficulty === 'easy').length || 0,
+               medium: questions?.filter(q => q.difficulty === 'medium').length || 0,
+               hard: questions?.filter(q => q.difficulty === 'hard').length || 0
+             }}
+           />
 
            <div className="bg-card border border-border rounded-3xl p-8 relative overflow-hidden shadow-2xl group">
-              <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/5 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-700" />
-              <p className="text-[10px] font-black text-secondary-foreground uppercase tracking-[0.2em] mb-4 opacity-50">Active Sessions</p>
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/20 transition-all duration-700" />
+              <p className="text-[10px] font-black text-secondary-foreground uppercase tracking-[0.2em] mb-4 opacity-50">Total Pool Capacity</p>
               <div className="flex items-end gap-3">
-                 <h3 className="text-6xl font-black text-foreground tracking-tighter text-blue-500">0</h3>
-                 <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3">Live</span>
+                 <h3 className="text-6xl font-black text-foreground tracking-tighter">{questions?.length || 0}</h3>
+                 <span className="text-[10px] font-black text-primary uppercase tracking-widest mb-3">Available</span>
               </div>
            </div>
 
            <div className="bg-card/30 border border-border/50 rounded-3xl p-8">
               <h4 className="text-[10px] font-black text-foreground uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                 <User size={14} className="text-primary" /> Admin Oversight
+                 <User size={14} className="text-primary" /> Security Protocol
               </h4>
               <div className="space-y-4">
                  <div className="flex items-center gap-3">
@@ -181,8 +209,8 @@ export default async function ExamDetailsPage({
                        <ShieldAlert size={14} />
                     </div>
                     <div className="flex flex-col">
-                       <span className="text-[9px] font-black text-foreground uppercase tracking-widest">Self-Destruct</span>
-                       <span className="text-[8px] font-bold text-secondary-foreground opacity-40">Deletes after 30 days</span>
+                       <span className="text-[9px] font-black text-foreground uppercase tracking-widest">Zero-Trust Mode</span>
+                       <span className="text-[8px] font-bold text-secondary-foreground opacity-40">Active Encryption Enabled</span>
                     </div>
                  </div>
               </div>

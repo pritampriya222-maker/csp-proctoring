@@ -12,7 +12,7 @@ export default async function StudentDashboard() {
   // 1. Fetch upcoming and active exams
   const { data: exams } = await supabase
     .from('exams')
-    .select('*')
+    .select('id, title, description, start_time, end_time, duration_minutes, is_published')
     .gt('end_time', new Date().toISOString())
     .order('start_time', { ascending: true })
 
