@@ -62,6 +62,16 @@ export default function CreateExamPage() {
               />
             </div>
           </div>
+          
+          {/* Client-side script to inject the user's timezone offset into the form before submission */}
+          <input type="hidden" name="timezone_offset" id="timezone_offset" value="0" />
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                document.getElementById('timezone_offset').value = new Date().getTimezoneOffset();
+              `,
+            }}
+          />
 
           <div className="pt-4 flex justify-end gap-3 border-t">
             <Link 
