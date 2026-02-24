@@ -46,6 +46,18 @@ export default function LiveExamClient({
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   
+  // UI Features
+  const [saveStatus, setSaveStatus] = useState<'Saving...' | 'Saved' | ''>('')
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false)
+
+  // Restore answers on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`exam_answers_${sessionId}`)
+      if (saved) setAnswers(JSON.parse(saved))
+    } catch (e) {}
+  }, [sessionId])
+  
   // Proctoring Statuses
   const [phoneStatus, setPhoneStatus] = useState<'pending' | 'success' | 'error'>('pending')
   const [mobileStream, setMobileStream] = useState<MediaStream | null>(null)
@@ -81,33 +93,38 @@ export default function LiveExamClient({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
-  // Auto-Submit function (declared early so effects can use it safely)
-  const autoSubmit = useCallback(async () => {
+  // Final Submission Logic (Manual and Auto)
+  const submitExamFinal = useCallback(async () => {
+    setIsSubmitting(true)
+    setIsSubmitModalOpen(false)
     try {
-      // 1. Mark session as completed in DB via API
-      await submitExam(sessionId, answers)
+      const res = await submitExam(sessionId, answers)
       
-      // Exit fullscreen before redirecting to avoid browser warnings
       if (document.fullscreenElement) {
-        try {
-          await document.exitFullscreen()
-        } catch (err) {
-          console.warn("Could not exit fullscreen gracefully:", err)
-        }
+        try { await document.exitFullscreen() } catch (err) {}
       }
       
-      // Stop proctoring right now by hiding the component
-      setIsSubmitting(true)
+      // Clear persistence
+      try { localStorage.removeItem(`exam_answers_${sessionId}`) } catch(e) {}
       
-      // Give React a tiny tick to unmount the engine and run its cleanup, then navigate
+      // Delay to allow UI unmount
       setTimeout(() => {
-        router.push('/student/dashboard?message=Exam+submitted+successfully')
+        if (res.redirect) {
+          router.push(res.redirect)
+        } else {
+          router.push('/student/dashboard?message=Exam+submitted+successfully')
+        }
       }, 500)
     } catch (e) {
       console.error("Submission error", e)
-      alert("Failed to submit exam. Please try again or contact invigilator.")
+      alert("Failed to submit exam. Please check your connection.")
+      setIsSubmitting(false)
     }
   }, [sessionId, answers, router])
+
+  const autoSubmit = useCallback(async () => {
+     await submitExamFinal()
+  }, [submitExamFinal])
 
   // Timer logic
   useEffect(() => {
@@ -287,7 +304,16 @@ export default function LiveExamClient({
   }, [pairingId, handleProctoringWarning])
 
   const handleAnswerSelect = (qId: string, value: string) => {
-    setAnswers(prev => ({ ...prev, [qId]: value }))
+    const newAnswers = { ...answers, [qId]: value }
+    setAnswers(newAnswers)
+    
+    // Auto-save logic
+    setSaveStatus('Saving...')
+    try {
+      localStorage.setItem(`exam_answers_${sessionId}`, JSON.stringify(newAnswers))
+    } catch(e) {}
+    
+    setTimeout(() => setSaveStatus('Saved'), 1000)
   }
 
 
@@ -338,17 +364,21 @@ export default function LiveExamClient({
         </div>
         
         <div className="flex items-center gap-6">
-          <div className={`flex items-center gap-2 font-mono text-xl font-bold ${timeLeft < 300 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
-            <Clock size={20} />
-            <span>{formatTime(timeLeft)}</span>
+          <div className="flex items-center gap-4 mr-4">
+            {saveStatus && (
+              <div className="text-sm font-medium text-emerald-600 flex items-center gap-1">
+                {saveStatus === 'Saved' && <CheckCircle size={14} />}
+                {saveStatus}
+              </div>
+            )}
+            <div className={`flex items-center gap-2 font-mono text-xl font-bold border-l pl-4 ${timeLeft < 300 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>
+              <Clock size={20} />
+              <span>{formatTime(timeLeft)}</span>
+            </div>
           </div>
           
           <button 
-            onClick={() => {
-              if (window.confirm('Are you sure you want to submit your exam early? This cannot be undone.')) {
-                autoSubmit()
-              }
-            }}
+            onClick={() => setIsSubmitModalOpen(true)}
             className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded-md font-medium text-sm transition"
           >
             Submit Exam
@@ -430,14 +460,10 @@ export default function LiveExamClient({
                </button>
              ) : (
                <button
-                  onClick={() => {
-                    if(window.confirm('You have reached the end. Submit all answers?')) {
-                      autoSubmit()
-                    }
-                  }}
+                  onClick={() => setIsSubmitModalOpen(true)}
                   className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition"
                >
-                  Finish
+                  Submit Exam
                </button>
              )}
           </div>
@@ -450,6 +476,32 @@ export default function LiveExamClient({
            <ProctoringEngine sessionId={sessionId} onWarning={handleProctoringWarning} />
            <LiveKitBroadcaster sessionId={sessionId} />
          </>
+      )}
+
+      {/* Confirmation Modal */}
+      {isSubmitModalOpen && (
+        <div className="fixed inset-0 z-50 bg-gray-900/50 flex flex-col items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full animate-in zoom-in-95">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Submit Exam?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to submit? You cannot re-enter the exam after submission.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setIsSubmitModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Continue Reviewing
+              </button>
+              <button 
+                onClick={submitExamFinal}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm font-medium text-white shadow-sm"
+              >
+                Yes, Submit Now
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

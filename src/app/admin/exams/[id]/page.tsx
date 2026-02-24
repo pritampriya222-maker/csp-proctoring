@@ -1,7 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Clock, Calendar, Edit, Play } from 'lucide-react'
+import { ArrowLeft, Clock, Calendar, Edit, Play, FileText } from 'lucide-react'
 
 export default async function ExamDetailsPage({
   params,
@@ -41,7 +41,11 @@ export default async function ExamDetailsPage({
             <Edit size={18} />
             <span>Edit Details</span>
           </button>
-          <Link href={`/admin/exams/${exam.id}/monitor`} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition">
+          <Link href={`/admin/exams/${exam.id}/results`} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition">
+            <FileText size={18} />
+            <span>View Results</span>
+          </Link>
+          <Link href={`/admin/exams/${exam.id}/monitor`} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition shadow-sm">
             <Play size={18} />
             <span>Live Monitor</span>
           </Link>
