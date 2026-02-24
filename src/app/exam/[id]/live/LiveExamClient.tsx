@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Clock, Video, Mic, Monitor, Smartphone, CheckCircle } from 'lucide-react'
+import { LiveKitRoom, useTracks, VideoTrack } from '@livekit/components-react'
+import { RoomEvent, Track } from 'livekit-client'
+import { createClient } from '@/utils/supabase/client'
 import { submitExam, recordViolation } from './actions'
 import ProctoringEngine from './ProctoringEngine'
 
@@ -62,6 +65,34 @@ export default function LiveExamClient({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
+  // Auto-Submit function (declared early so effects can use it safely)
+  const autoSubmit = useCallback(async () => {
+    try {
+      // 1. Mark session as completed in DB via API
+      await submitExam(sessionId, answers)
+      
+      // Exit fullscreen before redirecting to avoid browser warnings
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen()
+        } catch (err) {
+          console.warn("Could not exit fullscreen gracefully:", err)
+        }
+      }
+      
+      // Stop proctoring right now by hiding the component
+      setIsSubmitting(true)
+      
+      // Give React a tiny tick to unmount the engine and run its cleanup, then navigate
+      setTimeout(() => {
+        router.push('/student/dashboard?message=Exam+submitted+successfully')
+      }, 500)
+    } catch (e) {
+      console.error("Submission error", e)
+      alert("Failed to submit exam. Please try again or contact invigilator.")
+    }
+  }, [sessionId, answers, router])
+
   // Timer logic
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -74,7 +105,7 @@ export default function LiveExamClient({
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [timeLeft])
+  }, [timeLeft, autoSubmit])
 
   // Security Measures: Fullscreen enforcement
   const enforceFullscreen = useCallback(async () => {
@@ -136,7 +167,29 @@ export default function LiveExamClient({
       document.removeEventListener('contextmenu', handleContext)
       window.removeEventListener('keydown', handleKeydown)
     }
-  }, [enforceFullscreen])
+  }, [enforceFullscreen, addWarning, sessionId])
+
+  // Security: Listen for direct Admin Commands via Realtime Broadcast
+  useEffect(() => {
+    const supabase = createClient()
+    const adminChannel = supabase.channel(`host-${sessionId}`)
+      .on('broadcast', { event: 'admin-command' }, (payload) => {
+         const { command, message } = payload.payload
+         
+         if (command === 'WARNING') {
+            addWarning(`ADMIN INSTRUCTION: ${message}`)
+            recordViolation(sessionId, 'admin_warning', `Admin issued explicit text warning: ${message}`, 'high')
+         } else if (command === 'TERMINATE') {
+            alert(`EXAM TERMINATED BY ADMIN: ${message}`)
+            autoSubmit() // Instantly end exam gracefully
+         }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(adminChannel)
+    }
+  }, [sessionId, addWarning, autoSubmit])
 
   const handleProctoringWarning = useCallback((msg: string) => {
     addWarning(msg)
@@ -191,32 +244,7 @@ export default function LiveExamClient({
     setAnswers(prev => ({ ...prev, [qId]: value }))
   }
 
-  const autoSubmit = async () => {
-    try {
-      // 1. Mark session as completed in DB via API
-      await submitExam(sessionId, answers)
-      
-      // Exit fullscreen before redirecting to avoid browser warnings
-      if (document.fullscreenElement) {
-        try {
-          await document.exitFullscreen()
-        } catch (err) {
-          console.warn("Could not exit fullscreen gracefully:", err)
-        }
-      }
-      
-      // Stop proctoring right now by hiding the component
-      setIsSubmitting(true)
-      
-      // Give React a tiny tick to unmount the engine and run its cleanup, then navigate
-      setTimeout(() => {
-        router.push('/student/dashboard?message=Exam+submitted+successfully')
-      }, 500)
-    } catch (e) {
-      console.error("Submission error", e)
-      alert("Failed to submit exam. Please try again or contact invigilator.")
-    }
-  }
+
 
   if (!isFullscreen) {
     return (
@@ -370,10 +398,52 @@ export default function LiveExamClient({
         </div>
       </main>
       
-      {/* Background Media Engine */}
+      {/* Background Media Engine & LiveKit Broadcaster */}
       {!isSubmitting && (
-         <ProctoringEngine sessionId={sessionId} onWarning={handleProctoringWarning} />
+         <>
+           <ProctoringEngine sessionId={sessionId} onWarning={handleProctoringWarning} />
+           <LiveKitBroadcaster sessionId={sessionId} />
+         </>
       )}
     </div>
+  )
+}
+
+// Sub-component to handle connecting to LiveKit and publishing screen
+function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
+  const [token, setToken] = useState<string>('')
+
+  useEffect(() => {
+    // Fetch token for this specific room
+    const fetchToken = async () => {
+      try {
+        const res = await fetch(`/api/livekit/token?room=${sessionId}&username=student-${sessionId}`)
+        const data = await res.json()
+        if (data.token) {
+          setToken(data.token)
+        }
+      } catch (e) {
+        console.error('Failed to fetch LiveKit token', e)
+      }
+    }
+    fetchToken()
+  }, [sessionId])
+
+  if (!token || !process.env.NEXT_PUBLIC_LIVEKIT_URL) return null
+
+  return (
+    <LiveKitRoom
+      video={false} // We don't want standard webcam automatically, we want screen
+      audio={false}
+      screen={true} // Automatically prompt and publish screen!
+      token={token}
+      serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
+      connect={true}
+      style={{ display: 'none' }} // Hidden from student view
+      onConnected={() => console.log('Connected to LiveKit as Broadcaster')}
+      onDisconnected={() => console.log('Disconnected from LiveKit')}
+    >
+      {/* Empty internal, it automatically publishes due to screen=true */}
+    </LiveKitRoom>
   )
 }

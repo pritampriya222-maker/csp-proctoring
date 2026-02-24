@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
-import { AlertCircle, CheckCircle, Clock, VideoOff, EyeOff, Users, MonitorSmartphone, FileText } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, VideoOff, EyeOff, Users, MonitorSmartphone, FileText, MonitorPlay, XCircle } from 'lucide-react'
+import AdminScreenMonitor from './AdminScreenMonitor'
 
 type Session = any 
 type Violation = any
@@ -19,6 +20,9 @@ export default function LiveMonitorClient({
 }) {
   const [sessions, setSessions] = useState<Session[]>(initialSessions)
   const [violations, setViolations] = useState<Violation[]>(initialViolations)
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+  const [warningMessage, setWarningMessage] = useState<string>('')
+  
   const supabase = createClient()
 
   useEffect(() => {
@@ -68,6 +72,32 @@ export default function LiveMonitorClient({
       supabase.removeChannel(violationSub)
     }
   }, [examId, supabase])
+
+  const sendCommandToStudent = async (sessionId: string, command: 'WARNING' | 'TERMINATE', message?: string) => {
+    // We create a temporary channel just to broadcast the command, then leave
+    const channel = supabase.channel(`host-${sessionId}`)
+    
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        const payload = { command, message }
+        await channel.send({
+          type: 'broadcast',
+          event: 'admin-command',
+          payload: payload
+        })
+        
+        if (command === 'TERMINATE') {
+           alert('Termination command sent to student.')
+        } else {
+           alert('Warning sent to student.')
+           setWarningMessage('')
+        }
+        
+        // Clean up
+        supabase.removeChannel(channel)
+      }
+    })
+  }
 
   const getViolationIcon = (type: string) => {
     switch (type) {
@@ -125,16 +155,79 @@ export default function LiveMonitorClient({
                     </div>
                   </div>
                   
-                  {session.status === 'completed' && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
-                      <Link 
-                        href={`/admin/exams/${examId}/report?student=${session.student_id}`}
-                        className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
-                      >
-                        <FileText size={14} />
-                        View Report
-                      </Link>
+                  {session.status === 'in_progress' && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-col gap-3">
+                      
+                      {/* Live Screen Toggle */}
+                      <div className="flex justify-end">
+                        <button 
+                          onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
+                          className={`flex items-center gap-1 text-xs font-medium ${expandedSessionId === session.id ? 'text-red-600 hover:text-red-800' : 'text-blue-600 hover:text-blue-800'}`}
+                        >
+                          {expandedSessionId === session.id ? (
+                             <><XCircle size={14} /> Close Stream</>
+                          ) : (
+                             <><MonitorPlay size={14} /> View Live Screen</>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Explicit Admin Controls */}
+                      {expandedSessionId === session.id && (
+                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-3 rounded-md border border-gray-200">
+                           <div className="flex items-center gap-2">
+                             <input 
+                               type="text" 
+                               placeholder="Type a warning message..." 
+                               value={warningMessage}
+                               onChange={(e) => setWarningMessage(e.target.value)}
+                               className="flex-1 text-xs px-2 py-1 border rounded"
+                             />
+                             <button 
+                               onClick={() => sendCommandToStudent(session.id, 'WARNING', warningMessage || 'Please focus on your exam.')}
+                               className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded transition"
+                             >
+                               Send Warning
+                             </button>
+                           </div>
+                           <button 
+                             onClick={() => {
+                               if(window.confirm(`Are you absolutely sure you want to terminate ${session.profiles?.full_name}'s exam? This will auto-submit their current progress.`)) {
+                                  sendCommandToStudent(session.id, 'TERMINATE', 'Your exam was terminated by the administrator.')
+                               }
+                             }}
+                             className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition w-full"
+                           >
+                              Terminate Exam Session
+                           </button>
+                        </div>
+                      )}
                     </div>
+                  )}
+
+                  {session.status === 'in_progress' && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                      <button 
+                        onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
+                        className={`flex items-center gap-1 text-xs font-medium ${expandedSessionId === session.id ? 'text-red-600 hover:text-red-800' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        {expandedSessionId === session.id ? (
+                           <><XCircle size={14} /> Close Stream</>
+                        ) : (
+                           <><MonitorPlay size={14} /> View Live Screen</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Expanded Live Monitoring View */}
+                  {expandedSessionId === session.id && session.status === 'in_progress' && (
+                     <div className="mt-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                        <AdminScreenMonitor 
+                           sessionId={session.id} 
+                           studentName={session.profiles?.full_name || 'Student'} 
+                        />
+                     </div>
                   )}
                 </div>
               )
