@@ -1,8 +1,16 @@
+'use client'
+
 import { createExam } from './actions'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { useState, useEffect } from 'react'
 
 export default function CreateExamPage() {
+  const [tzOffset, setTzOffset] = useState(0)
+
+  useEffect(() => {
+    setTzOffset(new Date().getTimezoneOffset())
+  }, [])
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6 flex items-center gap-4">
@@ -63,15 +71,8 @@ export default function CreateExamPage() {
             </div>
           </div>
           
-          {/* Client-side script to inject the user's timezone offset into the form before submission */}
-          <input type="hidden" name="timezone_offset" id="timezone_offset" value="0" />
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                document.getElementById('timezone_offset').value = new Date().getTimezoneOffset();
-              `,
-            }}
-          />
+          {/* Safely inject the user's timezone offset */}
+          <input type="hidden" name="timezone_offset" value={tzOffset} />
 
           <div className="pt-4 flex justify-end gap-3 border-t">
             <Link 
