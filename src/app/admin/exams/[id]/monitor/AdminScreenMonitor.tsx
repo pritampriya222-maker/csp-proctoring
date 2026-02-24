@@ -118,17 +118,23 @@ function ScreenView() {
       {/* Secondary View (Cameras) */}
       {cameraTracks.length > 0 && (
         <div className={`h-1/3 border-t border-border bg-card/10 grid ${cameraTracks.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1`}>
-           {cameraTracks.map((track, idx) => (
-             <div key={track.participant.identity + idx} className="relative group bg-black rounded-lg overflow-hidden border border-white/5">
-                <VideoTrack 
-                   trackRef={track as any} 
-                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
-                />
-                <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 backdrop-blur rounded text-[7px] font-black text-white uppercase tracking-widest border border-white/10">
-                   {track.participant.identity.includes('mobile') ? 'Lateral View' : 'Webcam Monitor'}
-                </div>
-             </div>
-           ))}
+           {cameraTracks.map((track, idx) => {
+             const trackName = track.publication?.trackName || ''
+             const isCandidateCamera = trackName === 'candidate-camera'
+             const isMobile = track.participant.identity.includes('mobile')
+             
+             return (
+               <div key={track.participant.identity + idx} className="relative group bg-black rounded-lg overflow-hidden border border-white/5">
+                  <VideoTrack 
+                     trackRef={track as any} 
+                     className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                  />
+                  <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 backdrop-blur rounded text-[7px] font-black text-white uppercase tracking-widest border border-white/10">
+                     {isCandidateCamera ? 'Direct Candidate Feed' : isMobile ? 'Lateral View' : `Auxiliary Feed (${idx + 1})`}
+                  </div>
+               </div>
+             )
+           })}
         </div>
       )}
     </div>

@@ -20,7 +20,7 @@ export async function submitExam(sessionId: string, answers: Record<string, stri
 
   // 2. Fetch correct answers
   const { data: questions } = await supabase
-    .from('questions')
+    .from('exam_questions')
     .select('id, correct_answer')
     .eq('exam_id', session.exam_id)
 

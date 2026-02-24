@@ -56,7 +56,7 @@ export default async function ExamResultPage({
 
   // 3. Data Calculations
   const { count: totalQuestionsCount } = await supabase
-    .from('questions')
+    .from('exam_questions')
     .select('*', { count: 'exact', head: true })
     .eq('exam_id', id)
 

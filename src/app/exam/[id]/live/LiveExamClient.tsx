@@ -13,22 +13,22 @@ import ProctoringEngine from './ProctoringEngine'
 function AutoStreamPublisher({ cameraStream }: { cameraStream?: MediaStream | null }) {
   const { localParticipant } = useLocalParticipant()
   const connectionState = useConnectionState()
-  const isPublishedRef = useRef(false)
+  const trackPublishedRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (connectionState !== ConnectionState.Connected || !localParticipant) return
 
-    // 1. Manually publish the shared camera stream if provided
-    if (cameraStream && !isPublishedRef.current) {
+    // 1. Publish Camera Track
+    if (cameraStream) {
       const videoTrack = cameraStream.getVideoTracks()[0]
-      if (videoTrack) {
-        console.log("LiveKit: Publishing shared camera track...")
+      if (videoTrack && trackPublishedRef.current !== videoTrack.id) {
+        console.log("LiveKit: Publishing shared camera track...", videoTrack.id)
         localParticipant.publishTrack(videoTrack, { 
           source: Track.Source.Camera,
-          name: 'student-camera'
-        }).then(() => {
-          isPublishedRef.current = true
-          console.log("LiveKit: Shared camera published.")
+          name: 'candidate-camera'
+        }).then((pub) => {
+          trackPublishedRef.current = videoTrack.id
+          console.log("LiveKit: Camera published successfully.", pub.trackSid)
         }).catch(err => {
           console.error('Failed to publish shared video track:', err)
         })
@@ -37,6 +37,7 @@ function AutoStreamPublisher({ cameraStream }: { cameraStream?: MediaStream | nu
 
     // 2. Auto-publish screen share
     if (!localParticipant.isScreenShareEnabled) {
+      console.log("LiveKit: Auto-enabling screen share...")
       localParticipant.setScreenShareEnabled(true, { audio: false }).catch(err => {
         console.error('Failed to auto-publish screen share:', err)
       })
