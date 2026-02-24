@@ -221,43 +221,65 @@ export default function LiveExamClient({
     recordViolation(sessionId, type, msg, severity)
   }, [addWarning, sessionId])
 
-  // Mobile pairing reconnection
+  // Mobile pairing reconnection with robust retry
   useEffect(() => {
     if (!pairingId) return
     let peerInstance: any = null
+    let retryCount = 0
+    let retryTimeout: NodeJS.Timeout
+    const MAX_RETRIES = 5
 
-    import('peerjs').then(({ default: Peer }) => {
-      const peer = new Peer(pairingId)
-      peerInstance = peer
-      peer.on('open', () => {
-        console.log('LiveExam Peer open with ID:', pairingId)
-      })
+    const initializePeer = () => {
+      import('peerjs').then(({ default: Peer }) => {
+        const peer = new Peer(pairingId)
+        peerInstance = peer
 
-      // Accept data connections so the mobile client's `dataConn.on('open')` triggers
-      peer.on('connection', (conn: any) => {
-        conn.on('data', () => {}) // just acknowledge
-      })
-
-      peer.on('call', (call: any) => {
-        call.answer()
-        call.on('stream', (remoteStream: MediaStream) => {
-          setMobileStream(remoteStream)
-          setPhoneStatus('success')
+        peer.on('open', () => {
+          console.log('LiveExam Peer open with ID:', pairingId)
+          retryCount = 0 // reset on success
         })
-        call.on('close', () => {
-          setMobileStream(null)
-          setPhoneStatus('error')
-          handleProctoringWarning('Mobile Phone Disconnected. Return phone to exam mode immediately.')
+
+        peer.on('connection', (conn: any) => {
+          conn.on('data', () => {}) 
+        })
+
+        peer.on('call', (call: any) => {
+          call.answer()
+          call.on('stream', (remoteStream: MediaStream) => {
+            setMobileStream(remoteStream)
+            setPhoneStatus('success')
+          })
+          call.on('close', () => {
+            setMobileStream(null)
+            setPhoneStatus('error')
+            handleProctoringWarning('Mobile Phone Disconnected. Return phone to exam mode immediately.')
+          })
+        })
+
+        peer.on('error', (err: any) => {
+           console.warn('PeerJS Error in LiveExam:', err.type, err)
+           if (err.type === 'unavailable-id') {
+             // Setup page might still be holding the ID during transition. Retry.
+             if (peerInstance) peerInstance.destroy()
+             if (retryCount < MAX_RETRIES) {
+               retryCount++
+               console.log(`Retrying Peer connection... (${retryCount}/${MAX_RETRIES})`)
+               retryTimeout = setTimeout(initializePeer, 2000)
+             } else {
+               setPhoneStatus('error')
+             }
+           } else {
+             setPhoneStatus('error')
+           }
         })
       })
+    }
 
-      // If peer is already destroyed or ID taken, try to reconnect occasionally
-      peer.on('error', (err: any) => {
-         console.warn('PeerJS Error in LiveExam:', err)
-      })
-    })
+    // Delay initial binding slightly to let Setup cleanup finish
+    retryTimeout = setTimeout(initializePeer, 1500)
 
     return () => {
+      if (retryTimeout) clearTimeout(retryTimeout)
       if (peerInstance) peerInstance.destroy()
     }
   }, [pairingId, handleProctoringWarning])

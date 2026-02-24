@@ -157,8 +157,6 @@ export default function LiveMonitorClient({
                   
                   {session.status === 'in_progress' && (
                     <div className="mt-3 pt-3 border-t border-gray-100 flex flex-col gap-3">
-                      
-                      {/* Live Screen Toggle */}
                       <div className="flex justify-end">
                         <button 
                           onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
@@ -174,7 +172,7 @@ export default function LiveMonitorClient({
 
                       {/* Explicit Admin Controls */}
                       {expandedSessionId === session.id && (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-3 rounded-md border border-gray-200">
+                        <div className="flex flex-col gap-2 bg-gray-50 p-3 rounded-md border border-gray-200">
                            <div className="flex items-center gap-2">
                              <input 
                                type="text" 
@@ -202,21 +200,6 @@ export default function LiveMonitorClient({
                            </button>
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {session.status === 'in_progress' && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
-                      <button 
-                        onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
-                        className={`flex items-center gap-1 text-xs font-medium ${expandedSessionId === session.id ? 'text-red-600 hover:text-red-800' : 'text-blue-600 hover:text-blue-800'}`}
-                      >
-                        {expandedSessionId === session.id ? (
-                           <><XCircle size={14} /> Close Stream</>
-                        ) : (
-                           <><MonitorPlay size={14} /> View Live Screen</>
-                        )}
-                      </button>
                     </div>
                   )}
 
