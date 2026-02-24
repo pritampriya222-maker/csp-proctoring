@@ -18,17 +18,16 @@ export async function createExam(formData: FormData) {
   const tzOffsetMinutes = parseInt(tzOffsetStr, 10) // e.g., -330 for IST
 
   // The 'start_time' comes in as 'YYYY-MM-DDTHH:MM' (local string representation).
-  // new Date(start_time) will parse it as local time ON THE SERVER (which is UTC on Vercel).
-  // So Vercel thinks the admin meant 10:54 UTC.
-  const vercelParsedDate = new Date(start_time)
+  // Appending 'Z' forces Node.js to parse it as exactly that time in UTC,
+  // completely ignoring whatever timezone the server OS is running in (Vercel vs Local).
+  const neutralUtcDate = new Date(`${start_time}Z`)
   
-  // To get the TRUE absolute time the Admin meant, we must apply the difference
-  // between Vercel's offset (usually 0) and the Admin's offset.
-  // We simply adjust the milliseconds based on the Admin's browser offset.
-  const absoluteStartTimeMs = vercelParsedDate.getTime() + (tzOffsetMinutes * 60000)
+  // The browser's getTimezoneOffset() returns minutes *behind* UTC (e.g. -330 for IST).
+  // UTC = Local Time + getTimezoneOffset()
+  const trueUtcMs = neutralUtcDate.getTime() + (tzOffsetMinutes * 60000)
   
-  const startDate = new Date(absoluteStartTimeMs)
-  const endDate = new Date(absoluteStartTimeMs + duration_minutes * 60000)
+  const startDate = new Date(trueUtcMs)
+  const endDate = new Date(trueUtcMs + duration_minutes * 60000)
 
   const { data: exam, error } = await supabase
     .from('exams')
