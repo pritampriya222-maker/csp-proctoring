@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Clock, Calendar, CheckCircle, AlertCircle, PlayCircle, Loader2 } from 'lucide-react'
+import { Clock, Calendar, CheckCircle, AlertCircle, PlayCircle, Loader2, ArrowRight } from 'lucide-react'
 
 export default function ExamList({ exams }: { exams: any[] }) {
   const [now, setNow] = useState<Date | null>(null)
@@ -15,8 +15,9 @@ export default function ExamList({ exams }: { exams: any[] }) {
 
   if (!now) {
     return (
-      <div className="p-8 flex justify-center items-center text-gray-400">
-        <Loader2 className="animate-spin mr-2" /> Loading exams...
+      <div className="p-20 flex flex-col justify-center items-center text-secondary-foreground space-y-4">
+        <Loader2 className="animate-spin text-primary" size={32} />
+        <p className="text-sm font-medium tracking-widest uppercase opacity-50">Synchronizing Session...</p>
       </div>
     )
   }
@@ -25,15 +26,15 @@ export default function ExamList({ exams }: { exams: any[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="py-4 px-6 font-semibold text-gray-700 text-sm w-1/3">Exam Name</th>
-            <th className="py-4 px-6 font-semibold text-gray-700 text-sm">Date</th>
-            <th className="py-4 px-6 font-semibold text-gray-700 text-sm">Duration</th>
-            <th className="py-4 px-6 font-semibold text-gray-700 text-sm">Status</th>
-            <th className="py-4 px-6 font-semibold text-gray-700 text-sm text-center">Action</th>
+          <tr className="bg-muted/50 border-b border-border">
+            <th className="py-5 px-8 font-bold text-secondary-foreground text-[11px] uppercase tracking-[0.2em] w-1/3">Main Examination</th>
+            <th className="py-5 px-6 font-bold text-secondary-foreground text-[11px] uppercase tracking-[0.2em]">Scheduled Date</th>
+            <th className="py-5 px-6 font-bold text-secondary-foreground text-[11px] uppercase tracking-[0.2em]">Duration</th>
+            <th className="py-5 px-6 font-bold text-secondary-foreground text-[11px] uppercase tracking-[0.2em]">Current Status</th>
+            <th className="py-5 px-8 font-bold text-secondary-foreground text-[11px] uppercase tracking-[0.2em] text-center">Action</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-border/50">
           {exams.map((exam) => {
             const startTime = new Date(exam.start_time)
             const endTime = new Date(exam.end_time)
@@ -46,71 +47,71 @@ export default function ExamList({ exams }: { exams: any[] }) {
             // Determine badge appearance
             let statusBadge = null
             if (status === 'COMPLETED') {
-              statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"><CheckCircle size={12}/> Completed</span>
+              statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-success/10 text-success border border-success/20"><CheckCircle size={12}/> Completed</span>
             } else if (status === 'UNDER_REVIEW') {
-              statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800"><AlertCircle size={12}/> Under Review</span>
+              statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-destructive/10 text-destructive border border-destructive/20"><AlertCircle size={12}/> Under Review</span>
             } else if (status === 'IN_PROGRESS') {
-              statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><PlayCircle size={12}/> In Progress</span>
+              statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 animate-pulse"><PlayCircle size={12}/> In Progress</span>
             } else {
               // NOT_ATTEMPTED
               if (isLiveTime) {
-                statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 animate-pulse">Live Now</span>
+                statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">Live Now</span>
               } else if (isPast) {
-                statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Missed</span>
+                statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-muted text-secondary-foreground border border-border">Missed</span>
               } else {
-                statusBadge = <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Not Attempted</span>
+                statusBadge = <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-muted/50 text-secondary-foreground border border-border">Upcoming</span>
               }
             }
 
             // Determine Action Button
             let actionBtn = null
             if (status === 'COMPLETED') {
-               actionBtn = <button disabled className="w-full py-1.5 px-3 bg-gray-100 text-gray-400 rounded-md text-sm cursor-not-allowed font-medium">Completed</button>
+               actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest opacity-50 underline-offset-4 decoration-2 decoration-primary">Submitted</button>
             } else if (status === 'UNDER_REVIEW') {
-               actionBtn = <button disabled className="w-full py-1.5 px-3 bg-orange-50 text-orange-400 border border-orange-100 rounded-md text-sm cursor-not-allowed font-medium">Awaiting Faculty Review</button>
+               actionBtn = <button disabled className="w-full py-2.5 px-4 bg-destructive/5 text-destructive/40 border border-destructive/10 rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Locked</button>
             } else if (status === 'IN_PROGRESS') {
                if (isPast) {
-                 actionBtn = <button disabled className="w-full py-1.5 px-3 bg-gray-100 text-gray-400 rounded-md text-sm cursor-not-allowed font-medium">Time Expired</button>
+                 actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Expired</button>
                } else {
-                 actionBtn = <Link href={`/exam/${exam.id}/setup`} className="block w-full text-center py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition">Resume Exam</Link>
+                 actionBtn = <Link href={`/exam/${exam.id}/setup`} className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-full text-xs font-bold uppercase tracking-widest transition-all duration-300 shadow-lg shadow-primary/20 hover:scale-[1.02]">Resume <ArrowRight size={14} /></Link>
                }
             } else {
                // NOT_ATTEMPTED
                if (isFuture) {
-                 actionBtn = <button disabled className="w-full py-1.5 px-3 bg-gray-100 text-gray-400 rounded-md text-sm cursor-not-allowed font-medium">Not Yet Time</button>
+                 actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Not Started</button>
                } else if (isPast) {
-                 actionBtn = <button disabled className="w-full py-1.5 px-3 bg-gray-100 text-gray-400 rounded-md text-sm cursor-not-allowed font-medium">Exam Ended</button>
+                 actionBtn = <button disabled className="w-full py-2.5 px-4 bg-muted text-muted-foreground rounded-full text-xs cursor-not-allowed font-bold uppercase tracking-widest">Closed</button>
                } else {
-                 actionBtn = <Link href={`/exam/${exam.id}/setup`} className="block w-full text-center py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-medium transition shadow-sm">Start Exam</Link>
+                 actionBtn = <Link href={`/exam/${exam.id}/setup`} className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-full text-xs font-bold uppercase tracking-widest transition-all duration-300 shadow-lg shadow-primary/20 hover:scale-[1.02]">Start Exam <ArrowRight size={14} /></Link>
                }
             }
 
             return (
-              <tr key={exam.id} className="hover:bg-gray-50 transition-colors">
-                <td className="py-4 px-6 border-b border-gray-100">
-                  <div className="font-medium text-gray-900">{exam.title}</div>
-                  {exam.description && <div className="text-xs text-gray-500 mt-1 line-clamp-1">{exam.description}</div>}
+              <tr key={exam.id} className="hover:bg-muted/30 transition-all duration-300 group">
+                <td className="py-6 px-8">
+                  <div className="font-bold text-foreground group-hover:text-primary transition-colors">{exam.title}</div>
+                  {exam.description && <div className="text-xs text-secondary-foreground mt-1 line-clamp-1 font-medium opacity-60">{exam.description}</div>}
                 </td>
-                <td className="py-4 px-6 border-b border-gray-100 text-sm text-gray-600 whitespace-nowrap">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar size={14} className="text-gray-400" />
+                <td className="py-6 px-6 text-[13px] text-foreground font-medium whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={14} className="text-primary opacity-50" />
                     {startTime.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5 ml-5">
+                  <div className="text-[10px] text-secondary-foreground mt-1 ml-5 font-bold opacity-40">
                     {startTime.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </td>
-                <td className="py-4 px-6 border-b border-gray-100 text-sm text-gray-600">
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-gray-400" />
-                    {exam.duration_minutes} mins
+                <td className="py-6 px-6 text-[13px] text-foreground font-medium">
+                  <div className="flex items-center gap-2">
+                    <Clock size={14} className="text-primary opacity-50" />
+                    {exam.duration_minutes} Mins
                   </div>
                 </td>
-                <td className="py-4 px-6 border-b border-gray-100">
+                <td className="py-6 px-6">
                   {statusBadge}
                 </td>
-                <td className="py-4 px-6 border-b border-gray-100 align-middle">
-                  <div className="w-full max-w-[160px] mx-auto">
+                <td className="py-6 px-8 align-middle">
+                  <div className="w-full max-w-[140px] mx-auto">
                     {actionBtn}
                   </div>
                 </td>

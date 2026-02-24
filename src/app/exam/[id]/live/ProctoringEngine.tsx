@@ -29,16 +29,14 @@ export default function ProctoringEngine({
 
   useEffect(() => {
     isShuttingDown.current = false
-    let cameraStream: MediaStream | null = null
-    let screenStream: MediaStream | null = null
     let audioLoopId: number
+    let visionLoopId: number
 
     const startCapturing = async () => {
       if (isCaptureStarting.current) return
       isCaptureStarting.current = true
 
       try {
-        // 1. Start Camera & Mic
         const cStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, facingMode: 'user' },
           audio: true
@@ -54,12 +52,11 @@ export default function ProctoringEngine({
           videoRef.current.srcObject = cStream
         }
 
-        // 2. Setup Audio Analysis (Voice Activity Detection)
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
         audioContextRef.current = audioCtx
         const analyser = audioCtx.createAnalyser()
         analyser.fftSize = 512
-        analyser.minDecibels = -60 // Sensitivity to trigger speaking
+        analyser.minDecibels = -60
         analyserRef.current = analyser
 
         const source = audioCtx.createMediaStreamSource(cStream)
@@ -67,27 +64,18 @@ export default function ProctoringEngine({
 
         const bufferLength = analyser.frequencyBinCount
         const dataArray = new Uint8Array(bufferLength)
-
         let speakingStreak = 0
 
         const analyzeAudio = () => {
           if (!analyserRef.current) return
           analyserRef.current.getByteFrequencyData(dataArray)
-          
-          // Calculate average volume
           let sum = 0
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i]
-          }
+          for (let i = 0; i < bufferLength; i++) sum += dataArray[i]
           const averageVolume = sum / bufferLength
 
-          // Threshold for "speaking"
           if (averageVolume > 20) {
             speakingStreak++
-            if (speakingStreak === 15) { // Needs to be sustained sound (roughly 1.5s based on 100ms interval)
-               onWarning("Speaking detected!")
-               // In a real app, send ProctoringEvent to API
-            }
+            if (speakingStreak === 15) onWarning("Speaking detected!")
           } else {
             speakingStreak = 0
           }
@@ -95,7 +83,6 @@ export default function ProctoringEngine({
 
         audioLoopId = window.setInterval(analyzeAudio, 100)
 
-        // 3. Start Screen Capture (Hidden)
         const sStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'monitor' }
         })
@@ -106,14 +93,10 @@ export default function ProctoringEngine({
         }
 
         screenStreamRef.current = sStream
-        if (screenRef.current) {
-          screenRef.current.srcObject = sStream
-        }
+        if (screenRef.current) screenRef.current.srcObject = sStream
         
-        // Listen if they stop sharing screen via the browser generic "Stop Sharing" button
         sStream.getVideoTracks()[0].onended = () => {
            onWarning("Screen sharing stopped! Return to exam immediately.")
-           // Restart request...
         }
 
         setIsCapturing(true)
@@ -127,9 +110,7 @@ export default function ProctoringEngine({
 
     startCapturing()
 
-    // 4. Setup MediaPipe AI Vision
     let faceLandmarker: FaceLandmarker | null = null
-    let visionLoopId: number
     
     const initVision = async () => {
       try {
@@ -145,10 +126,9 @@ export default function ProctoringEngine({
           },
           outputFaceBlendshapes: true,
           runningMode: "VIDEO",
-          numFaces: 2 // Detect up to 2 faces to catch cheating
+          numFaces: 2
         })
 
-        // Start processing frames
         let lastWarningTime = 0
         let lastVideoTime = -1
         let lastDetectTime = 0
@@ -156,40 +136,57 @@ export default function ProctoringEngine({
         const processVideo = async () => {
            if (isShuttingDown.current) return
 
-           if (videoRef.current && videoRef.current.readyState >= 2 && faceLandmarker) {
-             try {
-               const currentTime = videoRef.current.currentTime
-               if (currentTime !== lastVideoTime) {
-                 lastVideoTime = currentTime
+           if (videoRef.current && videoRef.current.readyState >= 2) {
+             // Mirror the feed to the HUD canvas
+             const canvas = document.getElementById('proctoring-canvas') as HTMLCanvasElement
+             if (canvas) {
+               const ctx = canvas.getContext('2d')
+               if (ctx) {
+                 // Set canvas size to match video aspect ratio if not set
+                 if (canvas.width !== videoRef.current.videoWidth) {
+                   canvas.width = videoRef.current.videoWidth
+                   canvas.height = videoRef.current.videoHeight
+                 }
+                 ctx.save()
+                 ctx.scale(-1, 1)
+                 ctx.drawImage(videoRef.current, -canvas.width, 0, canvas.width, canvas.height)
+                 ctx.restore()
                  
-                 const now = Date.now()
-                 if (now - lastDetectTime > 500) { // Throttle AI to ~2 FPS to fix lag
-                   lastDetectTime = now
-                   
-                   // CRITICAL: Double check we didn't start shutting down during the throttle delay
-                   if (isShuttingDown.current) return
+                 // Remove the placeholder if it exists (via parent hiding)
+                 const placeholder = document.getElementById('self-view-placeholder')
+                 if (placeholder) placeholder.style.display = 'none'
+               }
+             }
 
-                   const startTimeMs = performance.now()
-                   try {
-                     const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs)
-                     
-                     if (now - lastWarningTime > 3000) { // Only warn once every 3 seconds max
-                       if (results.faceBlendshapes.length === 0) {
-                          onWarning("Face not detected! Please look at the camera.")
-                          lastWarningTime = now
-                       } else if (results.faceBlendshapes.length > 1) {
-                          onWarning("Multiple faces detected! You must be alone in the room.")
-                          lastWarningTime = now
+             if (faceLandmarker) {
+               try {
+                 const currentTime = videoRef.current.currentTime
+                 if (currentTime !== lastVideoTime) {
+                   lastVideoTime = currentTime
+                   const now = Date.now()
+                   if (now - lastDetectTime > 500) { 
+                     lastDetectTime = now
+                     if (isShuttingDown.current) return
+                     const startTimeMs = performance.now()
+                     try {
+                       const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs)
+                       if (now - lastWarningTime > 4000) { 
+                         if (results.faceBlendshapes.length === 0) {
+                            onWarning("Face not detected! Please look at the camera.")
+                            lastWarningTime = now
+                         } else if (results.faceBlendshapes.length > 1) {
+                            onWarning("Multiple faces detected! You must be alone in the room.")
+                            lastWarningTime = now
+                         }
                        }
+                     } catch (e) {
+                       console.warn("WASM execution error", e)
                      }
-                   } catch (e) {
-                      console.warn("WASM execution aborted", e)
                    }
                  }
+               } catch (err) {
+                 console.warn("Vision frame skipped", err)
                }
-             } catch (err) {
-               // MediaPipe can throw if the video element is unmounted midway
-               console.warn("Vision processing skipped a frame", err)
              }
            }
            if (!isShuttingDown.current) {
@@ -204,14 +201,12 @@ export default function ProctoringEngine({
     
     initVision()
 
-    // Cleanup
     return () => {
       isShuttingDown.current = true
       window.clearInterval(audioLoopId)
       window.cancelAnimationFrame(visionLoopId)
       
       if (faceLandmarker) {
-        // Let any pending detectForVideo finish before pulling the rug
         setTimeout(() => {
            try { faceLandmarker?.close() } catch (e) {}
         }, 100)
@@ -221,40 +216,18 @@ export default function ProctoringEngine({
         audioContextRef.current?.close()
       }
       
-      // Forcefully stop all media tracks using the latest refs
-      if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(t => t.stop())
-      }
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(t => t.stop())
-      }
+      if (cameraStreamRef.current) cameraStreamRef.current.getTracks().forEach(t => t.stop())
+      if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach(t => t.stop())
 
-      // Clear video refs
-      if (videoRef.current) {
-         videoRef.current.srcObject = null
-      }
-      if (screenRef.current) {
-         screenRef.current.srcObject = null
-      }
+      if (videoRef.current) videoRef.current.srcObject = null
+      if (screenRef.current) screenRef.current.srcObject = null
     }
   }, [onWarning])
 
-  // We render the videos but keep them very small/absolute or hidden via CSS
-  // Need the video element in DOM for MediaPipe to process later
   return (
-    <div className="fixed bottom-4 right-4 z-40 bg-white p-2 rounded shadow-lg border pointer-events-none opacity-80 flex gap-2">
-      <div className="relative">
-         <p className="text-[10px] text-gray-500 font-medium pb-1">Webcam (AI Active)</p>
-         <video 
-           ref={videoRef} 
-           autoPlay 
-           playsInline 
-           muted 
-           className="w-32 h-24 bg-black object-cover rounded" 
-         />
-      </div>
-      {/* Keeping screen hidden, we don't need to show it back to them, just capture it */}
-      <video ref={screenRef} autoPlay playsInline muted className="hidden" />
+    <div className="hidden">
+       <video ref={videoRef} autoPlay playsInline muted />
+       <video ref={screenRef} autoPlay playsInline muted />
     </div>
   )
 }
