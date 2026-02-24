@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Clock, Video, Mic, Monitor, Smartphone, CheckCircle } from 'lucide-react'
-import { LiveKitRoom, useTracks, VideoTrack, useLocalParticipant } from '@livekit/components-react'
-import { RoomEvent, Track } from 'livekit-client'
+import { LiveKitRoom, useTracks, VideoTrack, useLocalParticipant, useConnectionState } from '@livekit/components-react'
+import { RoomEvent, Track, ConnectionState } from 'livekit-client'
 import { createClient } from '@/utils/supabase/client'
 import { submitExam, recordViolation } from './actions'
 import ProctoringEngine from './ProctoringEngine'
@@ -12,14 +12,16 @@ import ProctoringEngine from './ProctoringEngine'
 // Inner component to explicitly enable screensharing once connected
 function AutoScreenPublisher() {
   const { localParticipant } = useLocalParticipant()
+  const connectionState = useConnectionState()
 
   useEffect(() => {
-    if (localParticipant && !localParticipant.isScreenShareEnabled) {
+    // Only attempt to publish if the room is fully connected
+    if (connectionState === ConnectionState.Connected && localParticipant && !localParticipant.isScreenShareEnabled) {
       localParticipant.setScreenShareEnabled(true, { audio: false }).catch(err => {
         console.error('Failed to auto-publish screen share to LiveKit:', err)
       })
     }
-  }, [localParticipant])
+  }, [localParticipant, connectionState])
 
   return null
 }

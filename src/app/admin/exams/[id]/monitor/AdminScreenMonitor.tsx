@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { LiveKitRoom, useTracks, VideoTrack } from '@livekit/components-react'
-import { Track } from 'livekit-client'
+import { LiveKitRoom, useTracks, VideoTrack, useRoomContext } from '@livekit/components-react'
+import { Track, RoomEvent } from 'livekit-client'
 import { Loader2 } from 'lucide-react'
 
 // The core wrapper that fetches the token and connects to the room
@@ -59,11 +59,45 @@ export default function AdminScreenMonitor({ sessionId, studentName }: { session
 
 // Inner component that extracts and renders the remote screen track
 function ScreenView() {
-  // Find any published ScreenShare tracks in this room
-  // Setting updateOnlyOn to an empty array makes it re-evaluate whenever ANY track changes
+  const room = useRoomContext()
+  
+  // Explicitly listen to track published events and force subscription
+  useEffect(() => {
+    if (!room) return
+    
+    const handleTrackSubscribed = (track: Track) => {
+      console.log('Subscribed to track:', track.source)
+    }
+
+    const handleTrackPublished = (publication: any, participant: any) => {
+      if (publication.source === Track.Source.ScreenShare) {
+        console.log('ScreenShare published, subscribing...')
+        publication.setSubscribed(true)
+      }
+    }
+
+    room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
+    room.on(RoomEvent.TrackPublished, handleTrackPublished)
+    
+    // Check if there are already published tracks to subscribe to
+    room.remoteParticipants.forEach(p => {
+      p.trackPublications.forEach(pub => {
+        if (pub.source === Track.Source.ScreenShare && !pub.isSubscribed) {
+          pub.setSubscribed(true)
+        }
+      })
+    })
+
+    return () => {
+      room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed)
+      room.off(RoomEvent.TrackPublished, handleTrackPublished)
+    }
+  }, [room])
+
+  // Find any published ScreenShare tracks in this room.
   const tracks = useTracks(
     [{ source: Track.Source.ScreenShare, withPlaceholder: false }], 
-    { onlySubscribed: false }
+    { updateOnlyOn: [], onlySubscribed: false }
   )
   
   if (tracks.length === 0) {
