@@ -11,10 +11,12 @@ export interface ProctoringEvent {
 
 export default function ProctoringEngine({
   sessionId,
-  onWarning
+  onWarning,
+  onStreamAcquired
 }: {
   sessionId: string
   onWarning: (msg: string) => void
+  onStreamAcquired?: (stream: MediaStream) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const screenRef = useRef<HTMLVideoElement>(null)
@@ -51,6 +53,8 @@ export default function ProctoringEngine({
         if (videoRef.current) {
           videoRef.current.srcObject = cStream
         }
+        
+        onStreamAcquired?.(cStream)
 
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
         audioContextRef.current = audioCtx
@@ -169,16 +173,18 @@ export default function ProctoringEngine({
                      if (isShuttingDown.current) return
                      const startTimeMs = performance.now()
                      try {
-                       const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs)
-                       if (now - lastWarningTime > 4000) { 
-                         if (results.faceBlendshapes.length === 0) {
-                            onWarning("Face not detected! Please look at the camera.")
-                            lastWarningTime = now
-                         } else if (results.faceBlendshapes.length > 1) {
-                            onWarning("Multiple faces detected! You must be alone in the room.")
-                            lastWarningTime = now
-                         }
-                       }
+                      const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs)
+                      if (now - lastWarningTime > 3000) { 
+                        if (results.faceBlendshapes.length === 0) {
+                           console.log("AI Event: Face missing")
+                           onWarning("Face not detected! Please look at the camera.")
+                           lastWarningTime = now
+                        } else if (results.faceBlendshapes.length > 1) {
+                           console.log("AI Event: Multiple faces")
+                           onWarning("Multiple faces detected! You must be alone in the room.")
+                           lastWarningTime = now
+                        }
+                      }
                      } catch (e) {
                        console.warn("WASM execution error", e)
                      }

@@ -9,19 +9,31 @@ import { createClient } from '@/utils/supabase/client'
 import { submitExam, recordViolation } from './actions'
 import ProctoringEngine from './ProctoringEngine'
 
-// Inner component to explicitly enable screensharing once connected
-function AutoScreenPublisher() {
+// Inner component to explicitly enable screensharing and video publishing once connected
+function AutoStreamPublisher({ cameraStream }: { cameraStream?: MediaStream | null }) {
   const { localParticipant } = useLocalParticipant()
   const connectionState = useConnectionState()
 
   useEffect(() => {
-    // Only attempt to publish if the room is fully connected
-    if (connectionState === ConnectionState.Connected && localParticipant && !localParticipant.isScreenShareEnabled) {
+    if (connectionState !== ConnectionState.Connected || !localParticipant) return
+
+    // 1. Manually publish the shared camera stream if provided
+    if (cameraStream) {
+      const videoTrack = cameraStream.getVideoTracks()[0]
+      if (videoTrack) {
+        localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera }).catch(err => {
+          console.error('Failed to publish shared video track:', err)
+        })
+      }
+    }
+
+    // 2. Auto-publish screen share
+    if (!localParticipant.isScreenShareEnabled) {
       localParticipant.setScreenShareEnabled(true, { audio: false }).catch(err => {
-        console.error('Failed to auto-publish screen share to LiveKit:', err)
+        console.error('Failed to auto-publish screen share:', err)
       })
     }
-  }, [localParticipant, connectionState])
+  }, [localParticipant, connectionState, cameraStream])
 
   return null
 }
@@ -63,6 +75,7 @@ export default function LiveExamClient({
   // Proctoring Statuses
   const [phoneStatus, setPhoneStatus] = useState<'pending' | 'success' | 'error'>('pending')
   const [mobileStream, setMobileStream] = useState<MediaStream | null>(null)
+  const [sharedStream, setSharedStream] = useState<MediaStream | null>(null)
   const [sysStatus, setSysStatus] = useState({
     camera: 'success',
     mic: 'success',
@@ -545,7 +558,7 @@ export default function LiveExamClient({
       </div>
 
       {/* Floating Notifications (Toasts) */}
-      <div className="fixed top-24 right-6 z-[100] space-y-4 pointer-events-none max-w-sm">
+      <div className="fixed top-24 right-6 z-[999] space-y-4 pointer-events-none max-w-sm">
         {toasts.map((t) => (
           <div key={t.id} className={`p-5 rounded-2xl shadow-2xl backdrop-blur-2xl border flex items-start gap-4 animate-in slide-in-from-right duration-500 pointer-events-auto ${
              t.type === 'critical' 
@@ -568,8 +581,15 @@ export default function LiveExamClient({
       {/* Background Media & AI Engines */}
       {!isSubmitting && (
          <>
-           <ProctoringEngine sessionId={sessionId} onWarning={handleProctoringWarning} />
-           <LiveKitBroadcaster sessionId={sessionId} />
+           <ProctoringEngine 
+              sessionId={sessionId} 
+              onWarning={handleProctoringWarning} 
+              onStreamAcquired={setSharedStream}
+           />
+           <LiveKitBroadcaster 
+              sessionId={sessionId} 
+              cameraStream={sharedStream}
+           />
          </>
       )}
 
@@ -618,7 +638,7 @@ function StatusNode({ icon, label, status }: { icon: any, label: string, status:
   )
 }
 
-function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
+function LiveKitBroadcaster({ sessionId, cameraStream }: { sessionId: string, cameraStream?: MediaStream | null }) {
   const [token, setToken] = useState<string>('')
 
   useEffect(() => {
@@ -638,7 +658,7 @@ function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
 
   return (
     <LiveKitRoom
-      video={true}
+      video={false} // We publish manually via AutoStreamPublisher to avoid hardware conflicts
       audio={false}
       screen={true}
       token={token}
@@ -646,7 +666,7 @@ function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
       connect={true}
       onDisconnected={() => console.log('Disconnected from LiveKit')}
     >
-      <AutoScreenPublisher />
+      <AutoStreamPublisher cameraStream={cameraStream} />
     </LiveKitRoom>
   )
 }

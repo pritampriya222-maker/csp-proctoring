@@ -2,7 +2,26 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Video, ShieldCheck, WifiOff, Camera } from 'lucide-react'
-import { LiveKitRoom } from '@livekit/components-react'
+import { LiveKitRoom, useLocalParticipant, useConnectionState } from '@livekit/components-react'
+import { Track, ConnectionState } from 'livekit-client'
+
+function MobileAutoPublisher({ stream }: { stream: MediaStream | null }) {
+  const { localParticipant } = useLocalParticipant()
+  const connectionState = useConnectionState()
+
+  useEffect(() => {
+    if (connectionState !== ConnectionState.Connected || !localParticipant || !stream) return
+
+    const videoTrack = stream.getVideoTracks()[0]
+    if (videoTrack) {
+      localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera }).catch(err => {
+        console.error('Failed to publish mobile video track:', err)
+      })
+    }
+  }, [localParticipant, connectionState, stream])
+
+  return null
+}
 
 export default function MobileCameraClient({ pairingId }: { pairingId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -149,12 +168,14 @@ export default function MobileCameraClient({ pairingId }: { pairingId: string })
          {/* LiveKit Shadow Publisher */}
          {token && process.env.NEXT_PUBLIC_LIVEKIT_URL && (
            <LiveKitRoom
-             video={true}
+             video={false} // Avoid hardware conflict
              audio={false}
              token={token}
              serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
              connect={true}
-           />
+           >
+             <MobileAutoPublisher stream={stream} />
+           </LiveKitRoom>
          )}
 
          <div className="absolute top-4 right-4 z-20">
