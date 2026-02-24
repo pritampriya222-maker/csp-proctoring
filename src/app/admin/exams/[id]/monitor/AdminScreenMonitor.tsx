@@ -57,21 +57,15 @@ export default function AdminScreenMonitor({ sessionId, studentName }: { session
   )
 }
 
-// Inner component that extracts and renders the remote screen track
+// Inner component that extracts and renders remote tracks
 function ScreenView() {
   const room = useRoomContext()
   
-  // Explicitly listen to track published events and force subscription
   useEffect(() => {
     if (!room) return
-    
-    const handleTrackSubscribed = (track: Track) => {
-      console.log('Subscribed to track:', track.source)
-    }
-
-    const handleTrackPublished = (publication: any, participant: any) => {
-      if (publication.source === Track.Source.ScreenShare) {
-        console.log('ScreenShare published, subscribing...')
+    const handleTrackSubscribed = (track: Track) => console.log('Subscribed to track:', track.source)
+    const handleTrackPublished = (publication: any) => {
+      if (publication.source === Track.Source.ScreenShare || publication.source === Track.Source.Camera) {
         publication.setSubscribed(true)
       }
     }
@@ -79,12 +73,9 @@ function ScreenView() {
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
     room.on(RoomEvent.TrackPublished, handleTrackPublished)
     
-    // Check if there are already published tracks to subscribe to
     room.remoteParticipants.forEach(p => {
       p.trackPublications.forEach(pub => {
-        if (pub.source === Track.Source.ScreenShare && !pub.isSubscribed) {
-          pub.setSubscribed(true)
-        }
+        if (!pub.isSubscribed) pub.setSubscribed(true)
       })
     })
 
@@ -94,36 +85,56 @@ function ScreenView() {
     }
   }, [room])
 
-  // Find any published ScreenShare tracks in this room.
-  const tracks = useTracks(
-    [{ source: Track.Source.ScreenShare, withPlaceholder: false }], 
-    { updateOnlyOn: [], onlySubscribed: false }
-  )
+  // Track both ScreenShare and Camera
+  const screenTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }])
+  const cameraTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }])
   
-  if (tracks.length === 0) {
+  if (screenTracks.length === 0 && cameraTracks.length === 0) {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-6 text-center">
-        <MonitorOffIcon size={48} className="mb-4 opacity-50" />
-        <p className="font-medium text-lg">No Active Screen Stream</p>
-        <p className="text-sm mt-2 opacity-75">The student has not started sharing their screen yet, or their connection dropped.</p>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-secondary-foreground p-6 text-center bg-[#0B0F14]">
+        <div className="bg-destructive/10 p-5 rounded-full border border-destructive/20 mb-4 animate-pulse">
+           <MonitorOffIcon size={40} className="text-destructive" />
+        </div>
+        <p className="font-black uppercase tracking-widest text-xs">Waiting for Data Stream</p>
+        <p className="text-[10px] mt-2 opacity-40 font-bold uppercase tracking-widest max-w-[200px]">Candidate has not initialized media publishing protocols.</p>
       </div>
     )
   }
 
-  // Render the first screen track found
-  const trackRef = tracks[0] as any
-
   return (
-    <div className="w-full h-full">
-      <VideoTrack 
-        trackRef={trackRef} 
-        className="w-full h-full object-contain bg-black" 
-      />
+    <div className="flex flex-col h-[400px] bg-black">
+      {/* Primary View (Screen) */}
+      <div className={`relative flex-1 bg-black ${cameraTracks.length > 0 ? 'h-2/3' : 'h-full'}`}>
+        {screenTracks.length > 0 ? (
+          <VideoTrack trackRef={screenTracks[0] as any} className="w-full h-full object-contain" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted/10">
+             <span className="text-[10px] font-black uppercase tracking-widest opacity-20 text-foreground">Screen Stream Inactive</span>
+          </div>
+        )}
+        <div className="absolute top-3 left-3 px-2 py-1 bg-black/60 backdrop-blur rounded text-[8px] font-black text-white uppercase tracking-widest border border-white/10">Primary Display</div>
+      </div>
+
+      {/* Secondary View (Cameras) */}
+      {cameraTracks.length > 0 && (
+        <div className={`h-1/3 border-t border-border bg-card/10 grid ${cameraTracks.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1`}>
+           {cameraTracks.map((track, idx) => (
+             <div key={track.participant.identity + idx} className="relative group bg-black rounded-lg overflow-hidden border border-white/5">
+                <VideoTrack 
+                   trackRef={track as any} 
+                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                />
+                <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 backdrop-blur rounded text-[7px] font-black text-white uppercase tracking-widest border border-white/10">
+                   {track.participant.identity.includes('mobile') ? 'Lateral View' : 'Webcam Monitor'}
+                </div>
+             </div>
+           ))}
+        </div>
+      )}
     </div>
   )
 }
 
-// Simple icon for when screen is entirely missing
 function MonitorOffIcon({ size, className }: { size: number, className?: string }) {
   return (
     <svg 
@@ -138,7 +149,8 @@ function MonitorOffIcon({ size, className }: { size: number, className?: string 
       strokeLinejoin="round" 
       className={className}
     >
-      <path d="M17 17H5a2 2 0 0 1-2-2V5c0-1.5 1-2 2-2h14c1.1 0 2 .5 2 2v10a2 2 0 0 1-2 2h-2m-4 0v4m-4-4v4m-2 0h8"/>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
       <line x1="1" y1="1" x2="23" y2="23"/>
     </svg>
   )

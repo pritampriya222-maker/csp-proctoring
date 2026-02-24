@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
-import { AlertCircle, CheckCircle, Clock, VideoOff, EyeOff, Users, MonitorSmartphone, FileText, MonitorPlay, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, VideoOff, Users, MonitorSmartphone, MonitorPlay, XCircle, ShieldAlert, User, Mail, Send, Activity } from 'lucide-react'
 import AdminScreenMonitor from './AdminScreenMonitor'
 
 type Session = any 
@@ -26,14 +26,12 @@ export default function LiveMonitorClient({
   const supabase = createClient()
 
   useEffect(() => {
-    // 1. Subscribe to new sessions (students starting exam)
     const sessionSub = supabase
       .channel('public:exam_sessions')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'exam_sessions', filter: `exam_id=eq.${examId}` },
         (payload) => {
-          // If insert, fetch the full profile to get the name
           if (payload.eventType === 'INSERT') {
             supabase.from('profiles').select('full_name, email').eq('id', payload.new.student_id).single()
               .then(({ data }) => {
@@ -46,19 +44,15 @@ export default function LiveMonitorClient({
       )
       .subscribe()
 
-    // 2. Subscribe to new violations
     const violationSub = supabase
       .channel('public:exam_violations')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'exam_violations' },
         (payload) => {
-          // We need to check if this violation belongs to this exam
-          // This requires finding if the session_id is in our active sessions
           setSessions(currentSessions => {
              const session = currentSessions.find(s => s.id === payload.new.session_id)
              if (session) {
-                // It belongs to this exam! Add it to the log
                 setViolations(prev => [payload.new, ...prev])
              }
              return currentSessions
@@ -74,9 +68,7 @@ export default function LiveMonitorClient({
   }, [examId, supabase])
 
   const sendCommandToStudent = async (sessionId: string, command: 'WARNING' | 'TERMINATE', message?: string) => {
-    // We create a temporary channel just to broadcast the command, then leave
     const channel = supabase.channel(`host-${sessionId}`)
-    
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         const payload = { command, message }
@@ -85,15 +77,7 @@ export default function LiveMonitorClient({
           event: 'admin-command',
           payload: payload
         })
-        
-        if (command === 'TERMINATE') {
-           alert('Termination command sent to student.')
-        } else {
-           alert('Warning sent to student.')
-           setWarningMessage('')
-        }
-        
-        // Clean up
+        setWarningMessage('')
         supabase.removeChannel(channel)
       }
     })
@@ -101,160 +85,200 @@ export default function LiveMonitorClient({
 
   const getViolationIcon = (type: string) => {
     switch (type) {
-      case 'face_missing': return <VideoOff className="text-red-500 min-w-4 min-h-4" size={16} />
-      case 'multiple_faces': return <Users className="text-red-500 min-w-4 min-h-4" size={16} />
-      case 'tab_switch': return <MonitorSmartphone className="text-orange-500 min-w-4 min-h-4" size={16} />
-      case 'fullscreen_exit': return <MonitorSmartphone className="text-orange-500 min-w-4 min-h-4" size={16} />
-      default: return <AlertCircle className="text-gray-500 min-w-4 min-h-4" size={16} />
+      case 'face_missing': return <VideoOff className="text-destructive" size={14} />
+      case 'multiple_faces': return <Users className="text-destructive" size={14} />
+      case 'tab_switch': return <MonitorSmartphone className="text-warning" size={14} />
+      case 'fullscreen_exit': return <MonitorSmartphone className="text-warning" size={14} />
+      default: return <ShieldAlert className="text-secondary-foreground opacity-50" size={14} />
     }
   }
 
-  const getSeverityColor = (severity: string) => {
+  const getSeverityStyles = (severity: string) => {
     switch(severity) {
-      case 'critical': return 'bg-red-100 text-red-800 border-red-200'
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200'
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
+      case 'critical': return 'border-destructive/30 bg-destructive/5 text-destructive'
+      case 'high': return 'border-warning/30 bg-warning/5 text-warning'
+      case 'medium': return 'border-primary/30 bg-primary/5 text-primary'
+      default: return 'border-border bg-muted/20 text-secondary-foreground'
     }
   }
 
   return (
-    <div className="flex-1 grid grid-cols-3 gap-6 overflow-hidden">
+    <div className="flex-1 grid grid-cols-1 xl:grid-cols-4 gap-8 overflow-hidden h-full">
       
-      {/* Left Panel: Active Students */}
-      <div className="col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-          <h3 className="font-semibold text-gray-800">Live Students ({sessions.length})</h3>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sessions.map(session => {
-              const studentViolations = violations.filter(v => v.session_id === session.id)
-              const statusColor = session.status === 'completed' ? 'text-green-600 bg-green-50' : 'text-blue-600 bg-blue-50'
-              
-              return (
-                <div key={session.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{session.profiles?.full_name || 'Unknown Student'}</h4>
-                      <p className="text-xs text-gray-500">{session.profiles?.email}</p>
-                    </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>
-                      {session.status}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 text-sm mt-4 pt-3 border-t border-gray-100">
-                    <div className="flex items-center gap-1 text-red-600 font-medium">
-                      <AlertCircle size={14} />
-                      <span>{studentViolations.length} Flags</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <Clock size={14} />
-                      <span>{new Date(session.started_at).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                  
-                  {session.status === 'in_progress' && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-col gap-3">
-                      <div className="flex justify-end">
-                        <button 
-                          onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
-                          className={`flex items-center gap-1 text-xs font-medium ${expandedSessionId === session.id ? 'text-red-600 hover:text-red-800' : 'text-blue-600 hover:text-blue-800'}`}
-                        >
-                          {expandedSessionId === session.id ? (
-                             <><XCircle size={14} /> Close Stream</>
-                          ) : (
-                             <><MonitorPlay size={14} /> View Live Screen</>
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Explicit Admin Controls */}
-                      {expandedSessionId === session.id && (
-                        <div className="flex flex-col gap-2 bg-gray-50 p-3 rounded-md border border-gray-200">
-                           <div className="flex items-center gap-2">
-                             <input 
-                               type="text" 
-                               placeholder="Type a warning message..." 
-                               value={warningMessage}
-                               onChange={(e) => setWarningMessage(e.target.value)}
-                               className="flex-1 text-xs px-2 py-1 border rounded"
-                             />
-                             <button 
-                               onClick={() => sendCommandToStudent(session.id, 'WARNING', warningMessage || 'Please focus on your exam.')}
-                               className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded transition"
-                             >
-                               Send Warning
-                             </button>
-                           </div>
-                           <button 
-                             onClick={() => {
-                               if(window.confirm(`Are you absolutely sure you want to terminate ${session.profiles?.full_name}'s exam? This will auto-submit their current progress.`)) {
-                                  sendCommandToStudent(session.id, 'TERMINATE', 'Your exam was terminated by the administrator.')
-                               }
-                             }}
-                             className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition w-full"
-                           >
-                              Terminate Exam Session
-                           </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Expanded Live Monitoring View */}
-                  {expandedSessionId === session.id && session.status === 'in_progress' && (
-                     <div className="mt-4 animate-in slide-in-from-top-2 fade-in duration-200">
-                        <AdminScreenMonitor 
-                           sessionId={session.id} 
-                           studentName={session.profiles?.full_name || 'Student'} 
-                        />
-                     </div>
-                  )}
-                </div>
-              )
-            })}
-            
-            {sessions.length === 0 && (
-              <div className="col-span-2 text-center py-12 text-gray-500">
-                <Users size={48} className="mx-auto text-gray-300 mb-4" />
-                <p>No students have started the exam yet.</p>
+      {/* Left Area: Active Students Grid */}
+      <div className="xl:col-span-3 flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+           <div className="flex items-center gap-3">
+              <div className="bg-primary/20 p-2 rounded-lg">
+                 <Users size={20} className="text-primary" />
               </div>
-            )}
-          </div>
+              <div>
+                 <h3 className="text-lg font-black text-foreground tracking-tight uppercase">Live Candidate Roster</h3>
+                 <p className="text-secondary-foreground text-[10px] font-black opacity-50 uppercase tracking-widest">{sessions.length} Sessions Active</p>
+              </div>
+           </div>
         </div>
-      </div>
 
-      {/* Right Panel: Live Violation Stream */}
-      <div className="col-span-1 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-        <div className="px-4 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-          <h3 className="font-semibold text-gray-800">Violation Stream</h3>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {violations.map(violation => {
-            const student = sessions.find(s => s.id === violation.session_id)
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
+          {sessions.map(session => {
+            const studentViolations = violations.filter(v => v.session_id === session.id)
+            const isOnline = session.status === 'in_progress'
+            
             return (
-              <div key={violation.id} className={`p-3 rounded-md border text-sm ${getSeverityColor(violation.severity)}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-semibold">{student?.profiles?.full_name || 'Unknown'}</span>
-                  <span className="text-xs opacity-75">{new Date(violation.created_at).toLocaleTimeString()}</span>
+              <div key={session.id} className="bg-card/50 backdrop-blur-xl border border-border rounded-3xl overflow-hidden hover:border-primary/30 transition-all flex flex-col group shadow-xl">
+                <div className="p-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-secondary-foreground">
+                        <User size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-foreground leading-tight tracking-tight uppercase text-sm">{session.profiles?.full_name || 'Anonymous'}</h4>
+                        <div className="flex items-center gap-1.5 opacity-50 mt-1">
+                           <Mail size={10} />
+                           <p className="text-[10px] font-bold tracking-tight">{session.profiles?.email}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                      isOnline ? 'bg-success/5 border-success/30 text-success' : 'bg-muted border-border text-secondary-foreground'
+                    }`}>
+                      {session.status}
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-border/50">
+                    <div className="flex flex-col gap-1">
+                       <span className="text-[9px] font-black text-secondary-foreground uppercase tracking-widest opacity-40">Security Flags</span>
+                       <div className="flex items-center gap-1.5 text-destructive font-black text-sm">
+                          <ShieldAlert size={14} className="opacity-50" />
+                          <span>{studentViolations.length}</span>
+                       </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                       <span className="text-[9px] font-black text-secondary-foreground uppercase tracking-widest opacity-40">Inception</span>
+                       <div className="flex items-center gap-1.5 text-foreground font-black text-sm opacity-80">
+                          <Clock size={14} className="opacity-40" />
+                          <span>{new Date(session.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                       </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-start gap-2 mt-2">
-                  {getViolationIcon(violation.violation_type)}
-                  <p>{violation.description}</p>
-                </div>
+                
+                {isOnline && (
+                  <div className="px-6 pb-6 mt-auto">
+                    <div className="flex items-center justify-between mb-4">
+                       <button 
+                         onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
+                         className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest py-2 px-4 rounded-xl transition-all border ${
+                           expandedSessionId === session.id 
+                             ? 'bg-destructive/10 border-destructive/30 text-destructive' 
+                             : 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
+                         }`}
+                       >
+                         {expandedSessionId === session.id ? (
+                            <><XCircle size={14} /> Close Surveillance</>
+                         ) : (
+                            <><MonitorPlay size={14} /> Expand Live Feed</>
+                         )}
+                       </button>
+                    </div>
+
+                    {expandedSessionId === session.id && (
+                      <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                         {/* Control Bar */}
+                         <div className="flex flex-col gap-3 bg-background/50 p-4 rounded-2xl border border-border">
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="text" 
+                                placeholder="Issue explicit warning..." 
+                                value={warningMessage}
+                                onChange={(e) => setWarningMessage(e.target.value)}
+                                className="flex-1 text-xs px-4 py-2 bg-background border border-border rounded-xl text-foreground focus:border-warning/50 outline-none placeholder:opacity-20 font-medium"
+                              />
+                              <button 
+                                onClick={() => sendCommandToStudent(session.id, 'WARNING', warningMessage || 'Security protocol violation detected.')}
+                                className="p-2 bg-warning/20 text-warning border border-warning/30 rounded-xl hover:bg-warning/30 transition-all"
+                                title="Send Warning"
+                              >
+                                <Send size={16} />
+                              </button>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                if(window.confirm(`TERMINATION PROTOCOL: Expel ${session.profiles?.full_name} from the exam?`)) {
+                                   sendCommandToStudent(session.id, 'TERMINATE', 'Expelled by administrator for integrity violations.')
+                                }
+                              }}
+                              className="text-[9px] font-black uppercase tracking-widest bg-destructive hover:bg-destructive/90 text-white p-2 rounded-xl transition-all"
+                            >
+                               Abort Session
+                            </button>
+                         </div>
+
+                         {/* Actual Video Components */}
+                         <div className="rounded-2xl overflow-hidden border border-border bg-black shadow-2xl">
+                            <AdminScreenMonitor 
+                               sessionId={session.id} 
+                               studentName={session.profiles?.full_name || 'Candidate'} 
+                            />
+                         </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
           
-          {violations.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <CheckCircle size={32} className="mx-auto text-green-300 mb-3" />
-              <p>No violations detected yet.</p>
+          {sessions.length === 0 && (
+            <div className="col-span-full bg-card/30 border border-border border-dashed rounded-3xl py-24 text-center">
+              <Users size={64} className="mx-auto text-secondary-foreground opacity-10 mb-6" />
+              <p className="text-secondary-foreground font-black uppercase tracking-widest text-xs opacity-50">No candidates detected in the encryption room.</p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Right Area: Security Stream */}
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-3">
+           <div className="bg-destructive/20 p-2 rounded-lg">
+              <Activity size={20} className="text-destructive animate-pulse" />
+           </div>
+           <div>
+              <h3 className="text-lg font-black text-foreground tracking-tight uppercase">Integrity Stream</h3>
+              <p className="text-secondary-foreground text-[10px] font-black opacity-50 uppercase tracking-widest">Global Flag Timeline</p>
+           </div>
+        </div>
+
+        <div className="flex-1 bg-card/30 backdrop-blur-xl border border-border rounded-3xl overflow-hidden flex flex-col shadow-2xl">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+            {violations.map(violation => {
+              const student = sessions.find(s => s.id === violation.session_id)
+              return (
+                <div key={violation.id} className={`p-4 rounded-2xl border text-xs animate-in slide-in-from-right duration-300 ${getSeverityStyles(violation.severity)}`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-black uppercase tracking-tight">{student?.profiles?.full_name || 'System Identity'}</span>
+                    <span className="text-[9px] font-bold opacity-60">{new Date(violation.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div className="flex items-start gap-3 mt-3">
+                    <div className="mt-0.5 opacity-60">
+                       {getViolationIcon(violation.violation_type)}
+                    </div>
+                    <p className="font-bold leading-relaxed">{violation.description}</p>
+                  </div>
+                </div>
+              )
+            })}
+            
+            {violations.length === 0 && (
+              <div className="text-center py-20">
+                <CheckCircle size={48} className="mx-auto text-success opacity-10 mb-4" />
+                <p className="text-secondary-foreground font-black uppercase tracking-widest text-[10px] opacity-40">System Integrity Nominal</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -252,6 +252,13 @@ export default function LiveExamClient({
             handleProctoringWarning('Mobile Phone Disconnected. Return phone to exam mode.')
           })
         })
+        
+        peer.on('connection', (conn: any) => {
+           conn.on('open', () => {
+              conn.send({ sessionId })
+           })
+        })
+
         peer.on('error', () => { setPhoneStatus('error') })
       })
     }
@@ -631,7 +638,7 @@ function LiveKitBroadcaster({ sessionId }: { sessionId: string }) {
 
   return (
     <LiveKitRoom
-      video={false}
+      video={true}
       audio={false}
       screen={true}
       token={token}
