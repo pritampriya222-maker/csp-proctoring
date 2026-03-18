@@ -4,9 +4,13 @@ import { createExam } from './actions'
 import Link from 'next/link'
 import { ArrowLeft, Calendar, Clock, FileText, Layout, Plus, Info, ShieldCheck } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function CreateExamPage() {
+function CreateExamForm() {
   const [tzOffset, setTzOffset] = useState(0)
+  const searchParams = useSearchParams()
+  const error = searchParams.get('error')
 
   useEffect(() => {
     setTzOffset(new Date().getTimezoneOffset())
@@ -39,6 +43,12 @@ export default function CreateExamPage() {
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary-foreground">Exam Configuration Protocol</span>
            </div>
         </div>
+        
+        {error && (
+          <div className="mx-10 mt-8 p-4 bg-destructive/10 border border-destructive/20 rounded-xl">
+             <p className="text-xs font-bold text-destructive uppercase tracking-widest">{error}</p>
+          </div>
+        )}
 
         <form action={createExam} className="p-10 space-y-8">
           <div className="space-y-6">
@@ -131,5 +141,13 @@ export default function CreateExamPage() {
          </div>
       </div>
     </div>
+  )
+}
+
+export default function CreateExamPage() {
+  return (
+    <Suspense fallback={<div className="p-20 text-center animate-pulse text-primary font-black uppercase tracking-widest">Loading Configuration...</div>}>
+      <CreateExamForm />
+    </Suspense>
   )
 }
