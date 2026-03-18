@@ -80,6 +80,21 @@ export default async function AddQuestionPage({
                </select>
             </div>
 
+            <div className="space-y-2">
+               <label htmlFor="difficulty" className="text-[11px] font-black text-secondary-foreground uppercase tracking-widest ml-1 flex items-center gap-2">
+                  <Layout size={14} className="opacity-40" /> Difficulty Level
+               </label>
+               <select 
+                 name="difficulty" 
+                 id="difficulty" 
+                 className="w-full px-5 py-4 bg-background border border-border rounded-2xl text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none font-bold appearance-none cursor-pointer"
+               >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+               </select>
+            </div>
+
             <div className="bg-muted/10 p-8 rounded-3xl border border-border/50 space-y-6">
               <div className="flex items-center gap-2">
                  <Info size={14} className="text-primary opacity-50" />

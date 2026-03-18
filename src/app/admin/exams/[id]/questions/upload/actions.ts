@@ -12,6 +12,7 @@ export async function addQuestion(formData: FormData) {
 
   const exam_id = formData.get('exam_id') as string
   const type = formData.get('type') as string
+  const difficulty = formData.get('difficulty') as string || 'medium'
   const question_text = formData.get('question_text') as string
   const correct_answer = formData.get('correct_answer') as string
 
@@ -31,6 +32,7 @@ export async function addQuestion(formData: FormData) {
     .insert({
       exam_id,
       type,
+      difficulty,
       question_text,
       options: options,
       correct_answer: correct_answer || null,

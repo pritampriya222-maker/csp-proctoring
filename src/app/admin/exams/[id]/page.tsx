@@ -184,9 +184,9 @@ export default async function ExamDetailsPage({
              }}
              isPublished={exam.is_published || false}
              totalQuestions={{
-               easy: questions?.filter(q => q.difficulty === 'easy').length || 0,
-               medium: questions?.filter(q => q.difficulty === 'medium').length || 0,
-               hard: questions?.filter(q => q.difficulty === 'hard').length || 0
+               easy: questions?.filter(q => (q.difficulty || '').toLowerCase() === 'easy').length || 0,
+               medium: questions?.filter(q => (q.difficulty || 'medium').toLowerCase() === 'medium').length || 0,
+               hard: questions?.filter(q => (q.difficulty || '').toLowerCase() === 'hard').length || 0
              }}
            />
 
